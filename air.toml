@@ -1,0 +1,52 @@
+# Config file for Air (live-reload tool for Go)
+
+# Root directory of the project
+root = "." 
+
+# List of directories or files to exclude from watching
+# Air will ignore changes in these paths
+tmp_dir = "tmp"
+[build]
+  # Command to run to build your app (uses `go build` by default)
+  cmd = "go build -o ./tmp/main ."
+  
+  # Binary file that will be executed
+  bin = "./tmp/main"
+  
+  # Optional delay to wait before rebuilding after changes are detected
+  delay = 2000 # milliseconds
+  
+  # Whether to stop the old process before starting the new one
+  stop_on_error = true
+  
+  # List of patterns to exclude when watching files
+  exclude_dir = ["assets", "node_modules", "public", "tmp", "storage"]
+
+  # List of patterns to include when watching files (typically .go files)
+  include_ext = ["go", "tpl", "tmpl", "html"]
+
+  # List of files or paths to exclude from watching
+  exclude_file = ["air.toml"]
+
+  # Log only build errors
+  log_only_errors = false
+
+[log]
+  # Format of logs (options: "text" or "json")
+  format = "text"
+  
+  # Level of log (options: "debug", "info", "warn", "error")
+  level = "debug"
+
+[color]
+  # Custom colors for different log types
+  main = "magenta"
+  watcher = "cyan"
+  build = "yellow"
+  runner = "green"
+  app = "blue"
+
+[sh]
+  # List of shell commands to run before the build
+  cmd = "echo 'Running Air pre-build hook...'"
+
