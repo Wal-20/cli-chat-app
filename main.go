@@ -30,7 +30,13 @@ func main() {
 	}
 
 	// Migrate the schema
-	err = db.AutoMigrate(&models.User{})
+	err = db.AutoMigrate(
+		&models.User{},
+		&models.Chatroom{},
+		// &models.RefreshToken{},
+		// &models.Message{},
+	)
+
 	if err != nil {
 		log.Fatal("failed to migrate Database", err)
 	}
