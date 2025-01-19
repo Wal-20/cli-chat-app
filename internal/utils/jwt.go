@@ -4,6 +4,7 @@ import (
 	"time"
 	"github.com/golang-jwt/jwt/v5"
 	"os"	
+	"fmt"
 	"log"
 	"encoding/json"
 	"path/filepath"
@@ -69,6 +70,35 @@ func GenerateRefreshToken(userID uint) (string, error) {
 	signedToken, err := token.SignedString([]byte(SECRET_KEY))
 
 	return signedToken, err 
-	
+}
+
+// ValidateJWTToken validates the JWT access token and returns the claims
+func ValidateJWTToken(tokenString string) (jwt.MapClaims, error) {
+
+	SECRET_KEY := []byte(os.Getenv("JWT_SECRET"))
+	token, err := jwt.Parse(tokenString, func(token *jwt.Token) (interface{}, error) {
+		// Ensure the signing method is valid
+		if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
+			return nil, fmt.Errorf("unexpected signing method: %v", token.Header["alg"])
+		}
+		return SECRET_KEY, nil
+	})
+
+	if err != nil {
+		return nil, err
+	}
+
+	// Return the claims if the token is valid
+	if claims, ok := token.Claims.(jwt.MapClaims); ok && token.Valid {
+		// Check for token expiration
+		if exp, ok := claims["exp"].(float64); ok {
+			expirationTime := time.Unix(int64(exp), 0) // Convert expiration to time.Time
+			if expirationTime.Before(time.Now()) {
+				return nil, fmt.Errorf("token has expired")
+			}
+		}
+		return claims, nil
+	}
+	return nil, fmt.Errorf("invalid token")
 }
 

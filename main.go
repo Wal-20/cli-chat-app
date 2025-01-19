@@ -1,51 +1,19 @@
 package main
 
 import (
-	"log"
-	"os"
 	"github.com/Wal-20/cli-chat-app/internal/api"
-	"github.com/Wal-20/cli-chat-app/internal/api/handlers"
-	"github.com/Wal-20/cli-chat-app/internal/models"
-	"gorm.io/driver/mysql"
-	"github.com/joho/godotenv"
-	"gorm.io/gorm"
+	"github.com/Wal-20/cli-chat-app/internal/config"
+	"log"
 )
 
 
 func main() {
 
-	err := godotenv.Load()
+	err := config.InitDB()
 	if err != nil {
-		log.Fatalf("Error loading .env file: %v", err)
+		log.Fatal("DB not initialized")
 	}
 
-	dsn := os.Getenv("SERVICE_URI") 
-	if dsn == "" {
-		log.Fatal("CANNOT READ SERVICE_URI IN ENVIRONMENT")
-	}
-
-	db, err := gorm.Open(mysql.Open(dsn), &gorm.Config{})
-	if err != nil {
-		panic("failed to connect database")
-	}
-
-	// Migrate the schema
-	err = db.AutoMigrate(
-		&models.User{},
-		&models.Chatroom{},
-		// &models.RefreshToken{},
-		// &models.Message{},
-	)
-
-	if err != nil {
-		log.Fatal("failed to migrate Database", err)
-	}
-
-	log.Println("DB SYNC")
-
-	handlers.InitializeDB(db)
-
-	// Initialize server
 	api.NewServer()
 }
 

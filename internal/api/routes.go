@@ -10,7 +10,7 @@ import (
 
 
 func NewServer() {
-	// Create a router
+
 	mux := http.NewServeMux()
 
 	// User routes
@@ -20,9 +20,30 @@ func NewServer() {
     mux.Handle("POST /api/users/logout", middleware.AuthMiddleware(http.HandlerFunc(handlers.LogOut)))
     mux.Handle("POST /api/users/update", middleware.AuthMiddleware(http.HandlerFunc(handlers.UpdateUser)))
 
-/* 	mux.HandleFunc("GET /api/chatrooms", handlers.GetChatrooms)
-	mux.HandleFunc("POST /api/chatrooms", handlers.CreateChatroom)
-*/
+	// Chatroom routes
+ 	mux.HandleFunc("GET /api/chatrooms", handlers.GetChatrooms)
+	mux.Handle("POST /api/chatrooms", middleware.AuthMiddleware(http.HandlerFunc(handlers.CreateChatroom)))
+	mux.HandleFunc("GET /api/chatrooms/{id}/users", handlers.GetUsersByChatroom)
+	mux.HandleFunc("GET /api/chatrooms/{id}/messages", handlers.GetMessagesByChatroom)
+	mux.Handle("POST /api/chatrooms/{id}/join", 
+	middleware.AuthMiddleware(http.HandlerFunc(handlers.JoinChatroom)))
+
+	// Message routes
+	mux.Handle("POST /api/chatrooms/{id}/messages",
+		middleware.AuthMiddleware(
+			middleware.ChatroomMiddleware(
+				http.HandlerFunc(handlers.SendMessage),
+			),
+		),
+	)
+
+	mux.Handle("DELETE /api/chatrooms/{id}/messages/{messageId}",
+		middleware.AuthMiddleware(
+			middleware.ChatroomMiddleware(
+				http.HandlerFunc(handlers.DeleteMessage),
+			),
+		),
+	)
 
 	// Start the server on port 8080
 	fmt.Println("Server starting on port 8080...")

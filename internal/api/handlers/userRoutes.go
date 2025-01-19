@@ -2,21 +2,19 @@ package handlers
 
 import (
 	"encoding/json"
+	"errors"
+	"log"
 	"net/http"
 	"strconv"
-	"log"
 	"time"
+
+	"github.com/Wal-20/cli-chat-app/internal/config"
 	"github.com/Wal-20/cli-chat-app/internal/models"
 	"github.com/Wal-20/cli-chat-app/internal/utils"
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
 )
 
-var DB *gorm.DB
-
-func InitializeDB(database *gorm.DB) {
-	DB = database
-}
 
 func GetUsers(w http.ResponseWriter, r *http.Request) {
 	encoder := json.NewEncoder(w)
@@ -32,7 +30,7 @@ func GetUsers(w http.ResponseWriter, r *http.Request) {
 		}
 
 		var user models.User
-		result := DB.First(&user, id)
+		result := config.DB.First(&user, id)
 		if result.Error != nil {
 
 			w.WriteHeader(http.StatusNotFound)
@@ -47,7 +45,7 @@ func GetUsers(w http.ResponseWriter, r *http.Request) {
 
 	} else {
 		var users []models.User
-		result := DB.Find(&users)
+		result := config.DB.Find(&users)
 
 		if result.Error != nil {
 			encoder.Encode(gin.H{"Message": "Failed to retrieve users"})
@@ -74,8 +72,10 @@ func Login(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	defer r.Body.Close()
+
 	var userDB models.User
-	result := DB.Where("name = ?", user.Name).First(&userDB)
+	result := config.DB.Where("name = ?", user.Name).First(&userDB)
 
 	if result.Error != nil {
 		http.Error(w, "Invalid User", http.StatusBadRequest)
@@ -83,8 +83,23 @@ func Login(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if !utils.CheckPasswordHash(user.Password, userDB.Password) {
-		http.Error(w, "Invalid User", http.StatusBadRequest)
+		http.Error(w, "Invalid password", http.StatusUnauthorized)
 		return
+	}
+
+	// Load token pair from storage
+	tokenPair, err := utils.LoadTokenPair()
+	if err == nil && tokenPair.AccessToken != "" {
+		// Validate the existing access token
+		_, err := utils.ValidateJWTToken(tokenPair.AccessToken)
+		if err == nil {
+			// Token is valid; no need to generate a new one
+			encoder.Encode(map[string]interface{}{
+				"Status":      "user already logged in",
+				"AccessToken": tokenPair.AccessToken,
+			})
+			return
+		}
 	}
 
 	// Generate both access and refresh tokens
@@ -101,7 +116,7 @@ func Login(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Save tokens to local tokenPair
-	tokenPair := utils.TokenPair{
+	tokenPair = utils.TokenPair{
 		AccessToken:  accessToken,
 		RefreshToken: refreshToken,
 	}
@@ -113,7 +128,7 @@ func Login(w http.ResponseWriter, r *http.Request) {
 	now := time.Now()
 	userDB.LastLogin = &now
 
-	if err := DB.Save(&userDB).Error; err != nil {
+	if err := config.DB.Save(&userDB).Error; err != nil {
 		log.Printf("Failed to update LastLogin: %v", err)
 		http.Error(w, "Failed to update LastLogin", http.StatusInternalServerError)
 		return
@@ -155,7 +170,7 @@ func LogOut(w http.ResponseWriter, r *http.Request) {
 
 func CreateUser(w http.ResponseWriter, r *http.Request) {
 	var user models.User
-	//encode the body into the user struct
+
 	decoder := json.NewDecoder(r.Body)
 	encoder := json.NewEncoder(w)
 
@@ -163,6 +178,8 @@ func CreateUser(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Invalid JSON", http.StatusBadRequest)
 		return
 	}
+
+	defer r.Body.Close()
 
 	if user.Name == "" || user.Password == "" {
 		http.Error(w, "Invalid User", http.StatusBadRequest)
@@ -177,10 +194,36 @@ func CreateUser(w http.ResponseWriter, r *http.Request) {
 
 	user.Password = hashedPassword
 
-	result := DB.Create(&user)
+	now := time.Now()
+	user.LastLogin = &now
+
+	result := config.DB.Create(&user)
 
 	if result.Error != nil {
 		http.Error(w, "Error creating user", http.StatusBadRequest)
+		return
+	}
+
+	// Generate both access and refresh tokens
+	accessToken, err := utils.GenerateJWTToken(user.ID)
+	if err != nil {
+		http.Error(w, "Error generating token", http.StatusInternalServerError)
+		return
+	}
+
+	refreshToken, err := utils.GenerateRefreshToken(user.ID)
+	if err != nil {
+		http.Error(w, "Error generating refresh token", http.StatusInternalServerError)
+		return
+	}
+
+	// Save tokens to local tokenPair
+	tokenPair := utils.TokenPair{
+		AccessToken:  accessToken,
+		RefreshToken: refreshToken,
+	}
+	if err := utils.SaveTokenPair(tokenPair); err != nil {
+		http.Error(w, "Error saving credentials", http.StatusInternalServerError)
 		return
 	}
 
@@ -190,12 +233,15 @@ func CreateUser(w http.ResponseWriter, r *http.Request) {
 	encoder.Encode(map[string]interface{}{
 		"Status": "User created successfully",
 		"User":   user,
+		"Access Token": accessToken,
+		"Refresh Token": refreshToken,
 	})
 
 }
 
 
 func UpdateUser(w http.ResponseWriter, r *http.Request) {
+	// TODO: add admin authorization for updating a user, now only the user can update themselves
 	userID, ok := r.Context().Value("userID").(uint)
 
 	if !ok {
@@ -203,13 +249,16 @@ func UpdateUser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	user := DB.First(&models.User{}, userID)
-	
-	if user.RowsAffected == 0 {
-		http.Error(w, "User not found", http.StatusNotFound)
+	var user models.User
+	if err := config.DB.First(&user, userID).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			http.Error(w, "User not found", http.StatusNotFound)
+		} else {
+			http.Error(w, "Error updating user", http.StatusInternalServerError)
+		}
 		return
 	}
-	
+
 	var userUpdate models.User
 	decoder := json.NewDecoder(r.Body)
 	encoder := json.NewEncoder(w)
@@ -218,16 +267,28 @@ func UpdateUser(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Invalid JSON", http.StatusBadRequest)
 		return
 	}
+
+	defer r.Body.Close()
 	
 	if userUpdate.Name == "" || userUpdate.Password == "" {
 		http.Error(w, "Missing attributes", http.StatusBadRequest)
 		return
 	}
+	user.Name = userUpdate.Name
 
-	DB.Save(&userUpdate)
+	hashedPassword, err := utils.HashPassword(user.Password)
+	if err != nil {
+		http.Error(w, "Error hashing password", http.StatusInternalServerError)
+		return
+	}
+	user.Password = hashedPassword
+
+	config.DB.Save(&user)
 
 	encoder.Encode(map[string]interface{} {
 		"Status": "User Updated successfully",
-		"User": userUpdate,
+		"User": user,
 	})
 }
+
+// todo: add delete user route, make sure that user's JWT token gets removed as well
