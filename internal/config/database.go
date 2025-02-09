@@ -16,7 +16,7 @@ func InitDB() error {
 
 	err := godotenv.Load()
 	if err != nil {
-		log.Fatalf("Error loading .env file: %v", err)
+		log.Fatalf("Error loading environment variables: %v", err)
 	}
 
 	dsn := os.Getenv("SERVICE_URI") 
@@ -33,7 +33,9 @@ func InitDB() error {
 	err = db.AutoMigrate(
 		&models.User{},
 		&models.Chatroom{},
+		&models.UserChatroom{},
 		&models.Message{},
+		&models.Notification{},
 	)
 
 	if err != nil {

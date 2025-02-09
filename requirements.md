@@ -1,5 +1,3 @@
-
-
 CLI CHAT THINGY
 
 server listens to user signups/ logins, chatroom messages/creation, only the admin can add users,
@@ -12,30 +10,14 @@ admin invites members through id or username
 
 user is given a log of all prev active chatrooms should they want to join back.
 
+(https://github.com/coder/websocket)
 TUI (terminal user interface) lib (https://earthly.dev/blog/tui-app-with-go/)
 cli tool lib (https://cli.urfave.org/)
 
 look at https://github.com/charmbracelet/bubbletea
 
 
-SCHEMAS:
-
-user: id, username, password, chatrooms 
-chatrooms: id, users, messages, adminId, maxUserCount
-message: id, senderId, timestamp, chatroomId
-logEntry: id, 
-
 (e.g., index chatroom IDs for fast lookup).
-
-
-user <--MANY_MANY--> chatroom
-chatroom <--ONE_MANY--> message
-user <--ONE_MANY--> message
-
-
-HOW WILL A USER JOIN A ROOM?
-
-
 ideas: 
 text colors, ascii sticker like messages, file uploads
 
@@ -53,12 +35,16 @@ To prevent spamming or flooding in chatrooms, consider adding rate limits on the
 Add "Kick" functionality for Admins: Allow admins to kick users from chatrooms instead of just adding/inviting users. This will give admins more control over chatroom management.
 kicked users can req to join back or be added by admin, banned users cannot, and chatroom will not be displayed to them on search until they are unbanned.
 
-Optional Public Rooms: In the future, you may want to allow for public chatrooms that anyone can join without needing an invite.
 
 Custom Error Messages: Provide informative feedback to users when they perform invalid actions (e.g., trying to join a non-existent room or sending messages without being in a room).
 
 
-
 TODOS:
-- secret key user has to enter to join a room, we'll cross this bridge when we get there.
-- logging for chatroom members, join time, kicked / banned status
+- IMPORTANT: remove stale user-chatroom associations from db, should be done when user is not banned, but hasn't joined in 30 days
+- remove old notifications
+- admin actions: add any you find 
+- notifications for user
+- send a notification if admin has kicked the user
+- for the future, look into errors raised from the db and raise the proper messages
+- have more than one admin, give the ability to make admins
+- handle owner / last admin leaving chatroom (no admins left in a chatroom) 

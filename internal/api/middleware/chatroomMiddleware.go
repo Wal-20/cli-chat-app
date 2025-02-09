@@ -29,34 +29,19 @@ func ChatroomMiddleware(next http.Handler) http.Handler {
 		}
 
 		// Verify user membership in the chatroom
-		var chatroom models.Chatroom
-		if err := config.DB.Preload("Users").First(&chatroom, chatroomID).Error; err != nil {
+		var userChatroom models.UserChatroom
+		if err := config.DB.Where("user_id = ? AND chatroom_id = ? AND is_joined = ?", userID, chatroomID, true).First(&userChatroom).Error; err != nil {
 			if errors.Is(err, gorm.ErrRecordNotFound) {
-				http.Error(w, "Chatroom not found", http.StatusNotFound)
+				http.Error(w, "You are not a member of this chatroom", http.StatusForbidden)
 			} else {
-				http.Error(w, "Error retrieving chatroom", http.StatusInternalServerError)
+				http.Error(w, "Error retrieving user-chatroom association", http.StatusInternalServerError)
 			}
 			return
 		}
 
-		// Check if the user is a member of the chatroom
-		isMember := false
-		for _, user := range chatroom.Users {
-			if user.ID == userID {
-				isMember = true
-				break
-			}
-		}
-
-		if !isMember {
-			http.Error(w, "You are not a member of this chatroom", http.StatusForbidden)
-			return
-		}
-
-		// Store chatroom ID in context
-		ctx := context.WithValue(r.Context(), "chatroomID", chatroomID)
+		ctx := context.WithValue(r.Context(), "isAdmin", userChatroom.IsAdmin) // store admin status
 		next.ServeHTTP(w, r.WithContext(ctx))
 	})
 }
 
-// all this middleware does is get the authenticated user from the context, checks if the user is part of the chatroom, and adds that chatroom to the context
+// get the authenticated user from the context, check if the user is part of the chatroom, and add the user's admin status

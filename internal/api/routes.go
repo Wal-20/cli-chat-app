@@ -19,14 +19,41 @@ func NewServer() {
 	mux.HandleFunc("POST /api/users/login", handlers.Login)
     mux.Handle("POST /api/users/logout", middleware.AuthMiddleware(http.HandlerFunc(handlers.LogOut)))
     mux.Handle("POST /api/users/update", middleware.AuthMiddleware(http.HandlerFunc(handlers.UpdateUser)))
+    mux.Handle("GET /api/users/chatrooms", middleware.AuthMiddleware(http.HandlerFunc(handlers.GetChatroomsByUser)))
+
+	//admin routes
+	mux.Handle("POST /api/users/chatrooms/{id}/invite/{userId}", middleware.AuthMiddleware(
+		middleware.ChatroomMiddleware(
+			http.HandlerFunc(handlers.InviteUser),
+		),
+	))
+	mux.Handle("POST /api/users/chatrooms/{id}/kick/{userId}", middleware.AuthMiddleware(
+		middleware.ChatroomMiddleware(
+			http.HandlerFunc(handlers.KickUser),
+		),
+	))
+	mux.Handle("POST /api/users/chatrooms/{id}/ban/{userId}", middleware.AuthMiddleware(
+		middleware.ChatroomMiddleware(
+			http.HandlerFunc(handlers.BanUser),
+		),
+	))
 
 	// Chatroom routes
  	mux.HandleFunc("GET /api/chatrooms", handlers.GetChatrooms)
 	mux.Handle("POST /api/chatrooms", middleware.AuthMiddleware(http.HandlerFunc(handlers.CreateChatroom)))
+	mux.Handle("DELETE /api/chatrooms/{id}", middleware.AuthMiddleware(
+		middleware.ChatroomMiddleware(
+			http.HandlerFunc(handlers.DeleteChatroom),
+		),
+	))
 	mux.HandleFunc("GET /api/chatrooms/{id}/users", handlers.GetUsersByChatroom)
 	mux.HandleFunc("GET /api/chatrooms/{id}/messages", handlers.GetMessagesByChatroom)
-	mux.Handle("POST /api/chatrooms/{id}/join", 
-	middleware.AuthMiddleware(http.HandlerFunc(handlers.JoinChatroom)))
+	mux.Handle("POST /api/chatrooms/{id}/join", middleware.AuthMiddleware(http.HandlerFunc(handlers.JoinChatroom)))
+	mux.Handle("POST /api/chatrooms/{id}/leave", middleware.AuthMiddleware(
+		middleware.ChatroomMiddleware(
+			http.HandlerFunc(handlers.LeaveChatroom),
+		),
+	))
 
 	// Message routes
 	mux.Handle("POST /api/chatrooms/{id}/messages",
@@ -36,7 +63,6 @@ func NewServer() {
 			),
 		),
 	)
-
 	mux.Handle("DELETE /api/chatrooms/{id}/messages/{messageId}",
 		middleware.AuthMiddleware(
 			middleware.ChatroomMiddleware(
@@ -44,6 +70,14 @@ func NewServer() {
 			),
 		),
 	)
+	mux.Handle("POST /api/chatrooms/{id}/messages/{messageId}",
+		middleware.AuthMiddleware(
+			middleware.ChatroomMiddleware(
+				http.HandlerFunc(handlers.UpdateMessage),
+			),
+		),
+	)
+
 
 	// Start the server on port 8080
 	fmt.Println("Server starting on port 8080...")
