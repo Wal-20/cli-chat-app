@@ -2,14 +2,13 @@ package handlers
 
 import (
 	"encoding/json"
+	"errors"
+	"github.com/Wal-20/cli-chat-app/internal/config"
+	"github.com/Wal-20/cli-chat-app/internal/models"
+	"gorm.io/gorm"
 	"net/http"
 	"time"
-    "gorm.io/gorm"
-	"errors"
-	"github.com/Wal-20/cli-chat-app/internal/models"
-	"github.com/Wal-20/cli-chat-app/internal/config"
 )
-
 
 func GetChatrooms(w http.ResponseWriter, r *http.Request) {
 	encoder := json.NewEncoder(w)
@@ -36,7 +35,7 @@ func GetChatrooms(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "Failed to retrieve chatroom", http.StatusInternalServerError)
 			return
 		}
-		
+
 		encoder.Encode(map[string]interface{}{
 			"Chatroom": chatroom,
 		})
@@ -52,7 +51,7 @@ func GetUsersByChatroom(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-// Fetch all user-chatroom associations for the chatroom
+	// Fetch all user-chatroom associations for the chatroom
 	var userChatrooms []models.UserChatroom
 	if err := config.DB.Where("chatroom_id = ?", chatroomId).Find(&userChatrooms).Error; err != nil {
 		http.Error(w, "Error fetching user-chatroom associations", http.StatusInternalServerError)
@@ -63,7 +62,6 @@ func GetUsersByChatroom(w http.ResponseWriter, r *http.Request) {
 		"Users": userChatrooms,
 	})
 }
-
 
 func GetMessagesByChatroom(w http.ResponseWriter, r *http.Request) {
 	chatroomId := r.PathValue("id")
@@ -98,7 +96,6 @@ func GetMessagesByChatroom(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-
 func CreateChatroom(w http.ResponseWriter, r *http.Request) {
 	userID, ok := r.Context().Value("userID").(uint)
 	if !ok || userID == 0 {
@@ -108,10 +105,10 @@ func CreateChatroom(w http.ResponseWriter, r *http.Request) {
 
 	// Parse request body
 	var requestBody struct {
-		RecipientID uint   `json:"recipient_id"`
-		Title       string `json:"title"`
-		MaxUserCount uint `json:"maxUserCount"`
-		IsPublic bool `json:"is_public"`
+		RecipientID  uint   `json:"recipient_id"`
+		Title        string `json:"title"`
+		MaxUserCount uint   `json:"maxUserCount"`
+		IsPublic     bool   `json:"is_public"`
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&requestBody); err != nil {
@@ -140,9 +137,9 @@ func CreateChatroom(w http.ResponseWriter, r *http.Request) {
 
 	// Create chatroom
 	newChatRoom := models.Chatroom{
-		OwnerId:  userID,
-		Title:    requestBody.Title,
-		IsPublic: requestBody.IsPublic,
+		OwnerId:      userID,
+		Title:        requestBody.Title,
+		IsPublic:     requestBody.IsPublic,
 		MaxUserCount: requestBody.MaxUserCount,
 	}
 	if err := config.DB.Create(&newChatRoom).Error; err != nil {
@@ -166,7 +163,6 @@ func CreateChatroom(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusCreated)
 	json.NewEncoder(w).Encode(newChatRoom)
 }
-
 
 func DeleteChatroom(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
@@ -241,8 +237,8 @@ func JoinChatroom(w http.ResponseWriter, r *http.Request) {
 			newUserChatroom := models.UserChatroom{
 				UserID:       userID,
 				ChatroomID:   chatroom.Id,
-				LastJoinTime: &now, 
-			}		
+				LastJoinTime: &now,
+			}
 			if err := config.DB.Create(&newUserChatroom).Error; err != nil {
 				http.Error(w, "Error adding user to chatroom", http.StatusInternalServerError)
 				return
@@ -258,17 +254,16 @@ func JoinChatroom(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "Error retrieving user-chatroom association", http.StatusInternalServerError)
 			return
 		}
-	} 
+	}
 
 	if userChatroom.IsBanned {
 		http.Error(w, "You are banned from this chatroom", http.StatusForbidden)
 		return
-	} 
+	}
 	if userChatroom.IsJoined {
 		http.Error(w, "You are already part of this chatroom", http.StatusBadRequest)
 		return
 	}
-
 
 	now := time.Now()
 	if !chatroom.IsPublic {
@@ -296,10 +291,46 @@ func JoinChatroom(w http.ResponseWriter, r *http.Request) {
 
 }
 
+func transferOwnership(chatroomId string) error {
+	var newOwner models.UserChatroom
+
+	// Try to find an admin first
+	err := config.DB.Where("chatroom_id = ? AND is_admin = ?", chatroomId, true).
+		Order("last_join_time ASC").
+		First(&newOwner).Error
+
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		// No admin found, assign oldest non-admin user
+		err = config.DB.Where("chatroom_id = ?", chatroomId).
+			Order("last_join_time ASC").
+			First(&newOwner).Error
+	}
+
+	// If no users are left, ownership transfer isn't needed
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil
+	} else if err != nil {
+		return err
+	}
+
+	// Assign new owner
+	newOwner.IsOwner = true
+	if err := config.DB.Save(&newOwner).Error; err != nil {
+		return err
+	}
+
+	// Update chatroom's owner ID
+	return config.DB.Model(&models.Chatroom{}).
+		Where("id = ?", chatroomId).
+		Update("owner_id", newOwner.UserID).Error
+}
+
+
 func LeaveChatroom(w http.ResponseWriter, r *http.Request) {
 	userId := r.Context().Value("userID").(uint)
 	chatroomId := r.PathValue("id")
 
+	// Fetch user-chatroom association
 	var userChatroom models.UserChatroom
 	if err := config.DB.Where("user_id = ? AND chatroom_id = ?", userId, chatroomId).First(&userChatroom).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
@@ -310,19 +341,51 @@ func LeaveChatroom(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// If user is already not part of the chatroom, return error
 	if !userChatroom.IsJoined {
 		http.Error(w, "User already not part of chatroom", http.StatusBadRequest)
 		return
 	}
 
 	userChatroom.IsJoined = false
+	userChatroom.IsInvited = false
+
+	// Check if last user is leaving
+	var remainingUsers int64
+	config.DB.Model(&models.UserChatroom{}).
+		Where("chatroom_id = ? AND is_joined = ?", chatroomId, true).
+		Count(&remainingUsers)
+
+	if remainingUsers < 1 {
+		if err := config.DB.Where("id = ?", chatroomId).Delete(&models.Chatroom{}).Error; err != nil {
+			http.Error(w, "Error deleting chatroom", http.StatusInternalServerError)
+			return
+		}
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"Status": "Chatroom deleted as last user left",
+		})
+		return
+	}
+
+	// Transfer ownership if the user is the owner
+	if userChatroom.IsOwner {
+		if err := transferOwnership(chatroomId); err != nil {
+			http.Error(w, "Error transferring ownership", http.StatusInternalServerError)
+			return
+		}
+		userChatroom.IsOwner = false
+	}
+
+	// Save user changes
 	if err := config.DB.Save(&userChatroom).Error; err != nil {
 		http.Error(w, "Error updating user status", http.StatusInternalServerError)
 		return
 	}
+
+	// Respond with success
 	json.NewEncoder(w).Encode(map[string]interface{}{
 		"Status": "Left chatroom successfully",
-		"data": userChatroom,
+		"data":   userChatroom,
 	})
-	
 }
+

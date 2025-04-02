@@ -65,14 +65,6 @@ func AuthMiddleware(next http.Handler) http.Handler {
 			tokenPair.AccessToken = newAccessToken
 			utils.SaveTokenPair(tokenPair)
 
-			// Send the new access token back to the client
-			http.SetCookie(w, &http.Cookie{
-				Name:  "access_token",
-				Value: newAccessToken,
-				Path:  "/",
-				// Optional: Set expiry for the cookie if needed
-			})
-
 			ctx := context.WithValue(r.Context(), "userID", userID)
 			r = r.WithContext(ctx)
 

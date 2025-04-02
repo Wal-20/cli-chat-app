@@ -1,17 +1,25 @@
 package api
 
 import (
+	"encoding/json"
 	"fmt"
+	"log"
 	"net/http"
+
 	"github.com/Wal-20/cli-chat-app/internal/api/handlers"
 	"github.com/Wal-20/cli-chat-app/internal/api/middleware"
-	"log"
 )
 
 
 func NewServer() {
 
 	mux := http.NewServeMux()
+
+	mux.HandleFunc("GET /api/health", func(w http.ResponseWriter, r *http.Request) {
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"Status": "Server connection established",
+		})
+	})
 
 	// User routes
 	mux.HandleFunc("GET /api/users", handlers.GetUsers)

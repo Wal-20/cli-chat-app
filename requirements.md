@@ -11,10 +11,8 @@ admin invites members through id or username
 user is given a log of all prev active chatrooms should they want to join back.
 
 (https://github.com/coder/websocket)
-TUI (terminal user interface) lib (https://earthly.dev/blog/tui-app-with-go/)
 cli tool lib (https://cli.urfave.org/)
 
-look at https://github.com/charmbracelet/bubbletea
 
 
 (e.g., index chatroom IDs for fast lookup).
@@ -48,3 +46,16 @@ TODOS:
 - for the future, look into errors raised from the db and raise the proper messages
 - have more than one admin, give the ability to make admins
 - handle owner / last admin leaving chatroom (no admins left in a chatroom) 
+- Expose the app to curl requests instead of just relying on users installing binaries
+- (Chore) make the json tags in the backend models snake case, make sure they're the same as the ones in the client
+
+
+UI PAGES TODO:
+- invite / kick / ban interfaces
+- Join chatroom view, for private chatrooms, the id should be provided in the invite noti, user enters id and joins only if they are invited and are not banned
+- handle client errors more gracefully
+
+IMMEDIATE TODOS:
+- fix registration 400 issue
+- fetch messages in chatrooms
+- fix members getting into chatrooms without joining

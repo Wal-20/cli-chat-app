@@ -9,10 +9,9 @@ import (
 	"log"
 )
 
-var DB *gorm.DB // global var
+var DB *gorm.DB // global instance
 
 func InitDB() error {
-
 
 	err := godotenv.Load()
 	if err != nil {

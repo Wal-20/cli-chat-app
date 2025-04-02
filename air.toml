@@ -7,7 +7,7 @@ root = "."
 # Air will ignore changes in these paths
 tmp_dir = "tmp"
 [build]
-  # Command to run to build your app (uses `go build` by default)
+  # Command to run to build your app (uses go build by default)
   cmd = "go build -o ./tmp/main ."
   
   # Binary file that will be executed
@@ -49,4 +49,5 @@ tmp_dir = "tmp"
 [sh]
   # List of shell commands to run before the build
   cmd = "echo 'Running Air pre-build hook...'"
+
 

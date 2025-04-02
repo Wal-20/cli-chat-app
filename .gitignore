@@ -1,3 +1,5 @@
 .env
-.exe
+*.exe
 requirements.md
+build-errors.log
+node_modules

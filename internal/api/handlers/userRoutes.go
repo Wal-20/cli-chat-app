@@ -101,7 +101,11 @@ func Login(w http.ResponseWriter, r *http.Request) {
 	result := config.DB.Where("name = ?", user.Name).First(&userDB)
 
 	if result.Error != nil {
-		http.Error(w, "Invalid User", http.StatusBadRequest)
+		if errors.Is(result.Error, gorm.ErrRecordNotFound) {
+			http.Error(w, "User not found", http.StatusNotFound)
+		} else {
+			http.Error(w, "Database error", http.StatusInternalServerError)
+		}
 		return
 	}
 
@@ -124,12 +128,10 @@ func Login(w http.ResponseWriter, r *http.Request) {
 			})
 			return
 		}
-		// clear existing tokens for new user, or if old tokens were invalid
 		tokenPair.AccessToken = ""
 		tokenPair.RefreshToken = ""
 	}
 
-	// Generate both access and refresh tokens for the new user
 	accessToken, err := utils.GenerateJWTToken(userDB.ID)
 	if err != nil {
 		http.Error(w, "Error generating token", http.StatusInternalServerError)
@@ -142,7 +144,6 @@ func Login(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Save the new tokens to local token storage
 	tokenPair = utils.TokenPair{
 		AccessToken:  accessToken,
 		RefreshToken: refreshToken,
@@ -152,7 +153,6 @@ func Login(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Update the LastLogin timestamp for the user
 	now := time.Now()
 	userDB.LastLogin = &now
 	if err := config.DB.Save(&userDB).Error; err != nil {
@@ -161,12 +161,11 @@ func Login(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Respond with the new tokens
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
 	encoder.Encode(map[string]interface{}{
-		"Status":       "Login successful",
-		"Token":        accessToken,
+		"Status":       "success",
+		"AccessToken":        accessToken,
 		"RefreshToken": refreshToken,
 	})
 }
@@ -194,6 +193,41 @@ func LogOut(w http.ResponseWriter, r *http.Request) {
 	encoder.Encode(map[string]interface{}{
 		"Status": "Logged out succcessfully",
 	})
+}
+
+func DeleteUser(w http.ResponseWriter, r *http.Request) {
+
+	tokenPair, err := utils.LoadTokenPair()
+	if err != nil {
+		http.Error(w, "Error loading token pair", http.StatusInternalServerError)
+		return
+	}
+
+	tokenPair.AccessToken = ""
+	tokenPair.RefreshToken = ""
+
+	if err := utils.SaveTokenPair(tokenPair); err != nil {
+		http.Error(w, "Error saving token pair", http.StatusInternalServerError)
+		return
+	}
+
+	userID := r.Context().Value("userId")
+
+	if err := config.DB.Delete(&models.User{}, userID).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			http.Error(w, "User not found", http.StatusNotFound)
+		} else {
+			http.Error(w, "Error fetching user", http.StatusInternalServerError)
+		}
+		return
+	}
+
+	encoder := json.NewEncoder(w)
+
+	encoder.Encode(map[string]interface{}{
+		"Status": "User Deleted successfully",
+	})
+
 }
 
 
@@ -262,8 +296,8 @@ func CreateUser(w http.ResponseWriter, r *http.Request) {
 	encoder.Encode(map[string]interface{}{
 		"Status": "User created successfully",
 		"User":   user,
-		"Access Token": accessToken,
-		"Refresh Token": refreshToken,
+		"AccessToken": accessToken,
+		"RefreshToken": refreshToken,
 	})
 
 }
@@ -517,4 +551,3 @@ func BanUser(w http.ResponseWriter, r *http.Request) {
 
 }
 
-// todo: add delete user route, make sure that user's JWT token gets removed as well
