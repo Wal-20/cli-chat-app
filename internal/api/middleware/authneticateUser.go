@@ -41,6 +41,12 @@ func AuthMiddleware(next http.Handler) http.Handler {
 				return
 			}
 
+			username, exists := refreshClaims["username"]
+			if !exists || username == nil {
+				http.Error(w, "Invalid refresh token: missing username", http.StatusUnauthorized)
+				return
+			}
+
 			userIDValue, exists := refreshClaims["userID"]
 			if !exists || userIDValue == nil {
 				http.Error(w, "Invalid refresh token: missing user ID", http.StatusUnauthorized)
@@ -56,7 +62,7 @@ func AuthMiddleware(next http.Handler) http.Handler {
 			userID := uint(userIDFloat)
 
 			// Generate a new access token
-			newAccessToken, err := utils.GenerateJWTToken(userID)
+			newAccessToken, err := utils.GenerateJWTToken(userID, username.(string))
 			if err != nil {
 				http.Error(w, "Failed to generate new access token", http.StatusInternalServerError)
 				return

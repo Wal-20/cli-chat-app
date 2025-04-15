@@ -22,7 +22,6 @@ type LoginModel struct {
 var (
 	focusedStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("205"))
 	blurredStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("240"))
-	cursorStyle = focusedStyle
 	noStyle = lipgloss.NewStyle()
 	helpStyle           = blurredStyle
 	cursorModeHelpStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("244"))
@@ -32,6 +31,7 @@ var (
 )
 
 func NewLoginModel(apiClient *client.APIClient) LoginModel {
+
 	username := textinput.New()
 	username.Placeholder = "Username"
 	username.Focus()

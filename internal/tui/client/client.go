@@ -62,6 +62,7 @@ func (c *APIClient) SetToken(token string) {
 	c.accessToken = token
 }
 
+
 // Auth endpoints
 
 
@@ -114,13 +115,13 @@ func (c *APIClient) GetChatrooms() ([]models.Chatroom, error) {
 }
 
 
-func (c *APIClient) GetUserChatrooms() ([]map[string]interface{}, error) {
+func (c *APIClient) GetUserChatrooms() ([]models.Chatroom, error) {
 	resp, err := c.get("/users/chatrooms")
 	if err != nil {
 		return nil, err
 	}
 	var result struct {
-		Chatrooms []map[string]interface{} `json:"Chatrooms"`
+		Chatrooms []models.Chatroom `json:"Chatrooms"`
 	}
 	err = json.Unmarshal(resp, &result)
 	return result.Chatrooms, err

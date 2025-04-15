@@ -39,7 +39,7 @@ func LoadTokenPair() (TokenPair, error) {
 }
 
 
-func GenerateJWTToken(userID uint) (string, error) {
+func GenerateJWTToken(userID uint, username string) (string, error) {
 
 	SECRET_KEY := os.Getenv("JWT_SECRET")
 	if SECRET_KEY == "" {
@@ -47,6 +47,7 @@ func GenerateJWTToken(userID uint) (string, error) {
 	}
 	claims := jwt.MapClaims{
 		"userID": userID,
+		"username": username,
 		"exp": time.Now().Add(time.Minute * 15).Unix(),
 	}
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
@@ -55,7 +56,7 @@ func GenerateJWTToken(userID uint) (string, error) {
 	return signedToken, err 
 }
 
-func GenerateRefreshToken(userID uint) (string, error) {
+func GenerateRefreshToken(userID uint, username string) (string, error) {
 	SECRET_KEY := os.Getenv("JWT_SECRET")
 	if SECRET_KEY == "" {
 		log.Fatal("JWT_SECRET is not set")
@@ -63,6 +64,7 @@ func GenerateRefreshToken(userID uint) (string, error) {
 
 	claims := jwt.MapClaims{
 		"userID": userID,
+		"username": username,
 		"exp": time.Now().Add(time.Hour * 168).Unix(), // 7 days
 	}
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
@@ -103,3 +105,27 @@ func ValidateJWTToken(tokenString string) (jwt.MapClaims, error) {
 	return nil, fmt.Errorf("invalid token")
 }
 
+func GetClaimsFromToken(tokenString string) (jwt.MapClaims, error) {
+	SECRET_KEY := os.Getenv("JWT_SECRET")
+	if SECRET_KEY == "" {
+		return nil, fmt.Errorf("JWT_SECRET is not set")
+	}
+
+	token, err := jwt.Parse(tokenString, func(token *jwt.Token) (interface{}, error) {
+		// Ensure the signing method is HMAC
+		if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
+			return nil, fmt.Errorf("unexpected signing method: %v", token.Header["alg"])
+		}
+		return []byte(SECRET_KEY), nil
+	})
+
+	if err != nil {
+		return nil, err
+	}
+
+	if claims, ok := token.Claims.(jwt.MapClaims); ok && token.Valid {
+		return claims, nil
+	}
+
+	return nil, fmt.Errorf("invalid token")
+}

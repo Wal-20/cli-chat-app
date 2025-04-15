@@ -54,6 +54,12 @@ func SendMessage(w http.ResponseWriter, r *http.Request) {
 		ChatroomID: chatroomIdUint,
 	}
 
+	var user models.User
+	if err := config.DB.First(&user, message.UserId).Error; err != nil {
+		http.Error(w, "Unable to retrieve user information", http.StatusInternalServerError)
+		return
+	}
+
 	result := config.DB.Create(&message)
 
 	if result.Error != nil {
@@ -64,6 +70,7 @@ func SendMessage(w http.ResponseWriter, r *http.Request) {
 	encoder.Encode(map[string]interface{}{
 		"Status": "success",
 		"Message": message,
+		"Sender": user.Name,
 	})
 }
 

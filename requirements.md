@@ -44,7 +44,7 @@ TODOS:
 - notifications for user
 - send a notification if admin has kicked the user
 - for the future, look into errors raised from the db and raise the proper messages
-- have more than one admin, give the ability to make admins
+- give the ability for owner to make admins
 - handle owner / last admin leaving chatroom (no admins left in a chatroom) 
 - Expose the app to curl requests instead of just relying on users installing binaries
 - (Chore) make the json tags in the backend models snake case, make sure they're the same as the ones in the client
@@ -56,6 +56,6 @@ UI PAGES TODO:
 - handle client errors more gracefully
 
 IMMEDIATE TODOS:
-- fix registration 400 issue
+- fix registration 400 issue (done but needs some testing)
 - fetch messages in chatrooms
 - fix members getting into chatrooms without joining

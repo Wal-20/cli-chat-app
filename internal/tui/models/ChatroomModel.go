@@ -2,38 +2,36 @@
 package models
 
 import (
+	"encoding/json"
 	"fmt"
-	"strings"
 	"strconv"
+	"strings"
 
 	"github.com/Wal-20/cli-chat-app/internal/models"
 	"github.com/Wal-20/cli-chat-app/internal/tui/client"
 	"github.com/Wal-20/cli-chat-app/internal/tui/styles"
-	"github.com/charmbracelet/bubbles/cursor"
-	"github.com/charmbracelet/bubbles/textinput"
+	"github.com/charmbracelet/bubbles/textarea"
 	tea "github.com/charmbracelet/bubbletea"
 )
 
-const maxVisibleMessages = 5 // Number of messages visible at a time
+const maxVisibleMessages = 5
 
 type ChatroomModel struct {
 	apiClient   *client.APIClient
 	username    string
 	chatroom    models.Chatroom
 	messages    []models.Message
-	input       textinput.Model
-	scrollIndex int // Tracks scrolling position
+	input       textarea.Model
+	scrollIndex int
 }
 
-// NewChatroomModel initializes the chatroom model
 func NewChatroomModel(username string, chatroom models.Chatroom, apiClient *client.APIClient) ChatroomModel {
-	input := textinput.New()
+	input := textarea.New()
 	input.Placeholder = "Type a message..."
 	input.Focus()
-	input.CharLimit = 256
-	input.Width = 50
-	input.Cursor.Style = styles.CursorStyle
-	input.Cursor.SetMode(cursor.CursorBlink)
+	input.SetWidth(80)
+	input.SetHeight(6)
+	input.CharLimit = 500
 
 	messages, err := apiClient.GetMessages(chatroom.Id)
 	if err != nil {
@@ -46,16 +44,14 @@ func NewChatroomModel(username string, chatroom models.Chatroom, apiClient *clie
 		chatroom:    chatroom,
 		messages:    messages,
 		input:       input,
-		scrollIndex: 0, // Start at bottom (latest messages)
+		scrollIndex: 0,
 	}
 }
 
-// Init ensures the cursor blinks
 func (m ChatroomModel) Init() tea.Cmd {
-	return textinput.Blink
+	return textarea.Blink
 }
 
-// Update handles keypress events
 func (m ChatroomModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	var cmd tea.Cmd
 
@@ -63,20 +59,26 @@ func (m ChatroomModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.KeyMsg:
 		switch msg.String() {
 		case "enter":
-			if inputValue := m.input.Value(); inputValue != "" {
-
+			if inputValue := strings.TrimSpace(m.input.Value()); inputValue != "" {
 				result, err := m.apiClient.SendMessage(strconv.FormatUint(uint64(m.chatroom.Id), 10), inputValue)
-
-				if(err != nil) {
+				if err != nil {
 					panic(err)
 				}
 
-				message := result["Message"].(models.Message)
+				var message models.Message
+				msgData, err := json.Marshal(result["Message"])
+				if err != nil {
+					panic(err)
+				}
+
+				if err := json.Unmarshal(msgData, &message); err != nil {
+					panic(err)
+				}
 
 				m.messages = append(m.messages, message)
-				m.input.SetValue("") // Clear input after sending message
+				m.input.Reset()
 
-				m.scrollIndex = len(m.messages) - maxVisibleMessages // Scroll to latest message
+				m.scrollIndex = len(m.messages) - maxVisibleMessages
 				if m.scrollIndex < 0 {
 					m.scrollIndex = 0
 				}
@@ -85,29 +87,28 @@ func (m ChatroomModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return NewMainChatModel(m.username, m.apiClient), nil
 		case "up":
 			if m.scrollIndex > 0 {
-				m.scrollIndex-- // Scroll up
+				m.scrollIndex--
 			}
 		case "down":
 			if m.scrollIndex+maxVisibleMessages < len(m.messages) {
-				m.scrollIndex++ // Scroll down
+				m.scrollIndex++
 			}
 		default:
 			m.input, cmd = m.input.Update(msg)
 			return m, cmd
 		}
+	default:
+		m.input, cmd = m.input.Update(msg)
 	}
 
-	return m, nil
+	return m, cmd
 }
 
-// View renders the chat UI
 func (m ChatroomModel) View() string {
 	var sb strings.Builder
 
-	// Chatroom title
 	sb.WriteString(styles.TitleStyle.Render(fmt.Sprintf("Chatroom: %s", m.chatroom.Title)) + "\n\n")
 
-	// Handle scrolling bounds
 	if len(m.messages) > maxVisibleMessages {
 		if m.scrollIndex < 0 {
 			m.scrollIndex = 0
@@ -116,24 +117,21 @@ func (m ChatroomModel) View() string {
 		}
 	}
 
-	// Display visible messages based on scrolling
 	start := m.scrollIndex
 	end := start + maxVisibleMessages
-
-	end = min(end, len(m.messages))
+	end = min(len(m.messages), end)
+	
 	displayedMessages := m.messages[start:end]
-
 	for _, message := range displayedMessages {
 		sb.WriteString(styles.MessageStyle.Render(message.Content) + "\n")
 	}
 
-	// Scroll indicators
 	if len(m.messages) > maxVisibleMessages {
 		sb.WriteString("\n")
 		if m.scrollIndex > 0 {
 			sb.WriteString(styles.NavStyle.Render("[↑] "))
 		} else {
-			sb.WriteString("    ") // Align spacing
+			sb.WriteString("    ")
 		}
 
 		if m.scrollIndex+maxVisibleMessages < len(m.messages) {
@@ -142,9 +140,7 @@ func (m ChatroomModel) View() string {
 		sb.WriteString("\n")
 	}
 
-	// Input field
 	sb.WriteString("\n" + styles.InputStyle.Render(m.input.View()))
-
+	sb.WriteString(styles.CommandStyle.Render("[Esc] Exit Chatroom • [Enter] Send Message") + "\n")
 	return styles.ContainerStyle.Render(sb.String())
 }
-

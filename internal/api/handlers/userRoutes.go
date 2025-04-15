@@ -132,13 +132,13 @@ func Login(w http.ResponseWriter, r *http.Request) {
 		tokenPair.RefreshToken = ""
 	}
 
-	accessToken, err := utils.GenerateJWTToken(userDB.ID)
+	accessToken, err := utils.GenerateJWTToken(userDB.ID, userDB.Name)
 	if err != nil {
 		http.Error(w, "Error generating token", http.StatusInternalServerError)
 		return
 	}
 
-	refreshToken, err := utils.GenerateRefreshToken(userDB.ID)
+	refreshToken, err := utils.GenerateRefreshToken(userDB.ID, userDB.Name )
 	if err != nil {
 		http.Error(w, "Error generating refresh token", http.StatusInternalServerError)
 		return
@@ -268,13 +268,13 @@ func CreateUser(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Generate both access and refresh tokens
-	accessToken, err := utils.GenerateJWTToken(user.ID)
+	accessToken, err := utils.GenerateJWTToken(user.ID, user.Name)
 	if err != nil {
 		http.Error(w, "Error generating token", http.StatusInternalServerError)
 		return
 	}
 
-	refreshToken, err := utils.GenerateRefreshToken(user.ID)
+	refreshToken, err := utils.GenerateRefreshToken(user.ID, user.Name)
 	if err != nil {
 		http.Error(w, "Error generating refresh token", http.StatusInternalServerError)
 		return
@@ -494,7 +494,7 @@ func KickUser(w http.ResponseWriter, r *http.Request) {
 	}
 
 	json.NewEncoder(w).Encode(map[string]interface{} {
-		"Status": "User kicked mn gher matrood!",
+		"Status": "User kicked",
 		"User status": userChatroom,
 	})
 }
