@@ -97,7 +97,7 @@ func (c *APIClient) Logout() error {
 
 // Chatroom endpoints
 func (c *APIClient) GetChatrooms() ([]models.Chatroom, error) {
-	resp, err := c.get("/chatrooms")
+	resp, err := c.get("/chatrooms/public")
 	if err != nil {
 		return nil, err
 	}
@@ -127,8 +127,30 @@ func (c *APIClient) GetUserChatrooms() ([]models.Chatroom, error) {
 	return result.Chatrooms, err
 }
 
-func (c *APIClient) JoinChatroom(chatroomID string) error {
-	_, err := c.post(fmt.Sprintf("/chatrooms/%s/join", chatroomID), nil)
+
+func (c *APIClient) GetUsersByChatroom(chatroomID uint) ([]models.UserChatroom, error) {
+	endpoint := fmt.Sprintf("/chatrooms/%v/users", chatroomID)
+	resp, err := c.get(endpoint)
+	if err != nil {
+		// Log the actual error body for debugging
+		return nil, fmt.Errorf("failed GET %s: %w", endpoint, err)
+	}
+
+	var result struct {
+		UserChatroom []models.UserChatroom `json:"userChatroom"`
+	}
+
+	err = json.Unmarshal(resp, &result)
+	if err != nil {
+		return nil, fmt.Errorf("unmarshal error: %w. Raw response: %s", err, string(resp))
+	}
+
+	return result.UserChatroom, nil
+}
+
+
+func (c *APIClient) JoinChatroom(chatroomID uint) error {
+	_, err := c.post(fmt.Sprintf("/chatrooms/%v/join", chatroomID), nil)
 	return err
 }
 
@@ -138,13 +160,13 @@ func (c *APIClient) LeaveChatroom(chatroomID string) error {
 }
 
 // Message endpoints
-func (c *APIClient) GetMessages(chatroomID uint) ([]models.Message, error) {
+func (c *APIClient) GetMessages(chatroomID uint) ([]models.MessageWithUser, error) {
 	resp, err := c.get(fmt.Sprintf("/chatrooms/%v/messages", chatroomID))
 	if err != nil {
 		return nil, err
 	}
 	var result struct {
-		Messages []models.Message `json:"Messages"`
+		Messages []models.MessageWithUser `json:"Messages"`
 	}
 	err = json.Unmarshal(resp, &result)
 	return result.Messages, err

@@ -36,7 +36,7 @@ func NewChatroomDelegate() chatroomDelegate {
 		Padding(0, 0, 0, 2)
 
 	d.styles.SelectedTitle = d.styles.SelectedTitle.
-		Border(lipgloss.NormalBorder(), false, false, false, true).
+		Border(lipgloss.ThickBorder(), false, false, false, true).
 		BorderForeground(lipgloss.Color("170")).
 		Foreground(lipgloss.Color("170"))
 
@@ -60,9 +60,6 @@ func (d chatroomDelegate) Render(w io.Writer, m list.Model, index int, listItem 
 
 	// Build the title string
 	title := item.chatroom.Title
-	if !item.isMember {
-		title += " (public)"
-	}
 
 	var renderedTitle string
 	if index == m.Index() {
@@ -118,12 +115,12 @@ func NewMainChatModel(username string, apiClient *client.APIClient) MainChatMode
 	userList.DisableQuitKeybindings() // Disable default quit    
 	userList.SetShowPagination(true)
      
-	publicList := list.New(publicItems, delegate, 20, 10) // Set initial size
+	publicList := list.New(publicItems, delegate, 20, 10)
 	publicList.Title = "Public Chatrooms"
 	publicList.SetShowHelp(false)
 	publicList.SetFilteringEnabled(true)
-	publicList.Styles.Title = styles.TitleStyle // Add custom styling
-	publicList.DisableQuitKeybindings()         // Disable default quit
+	publicList.Styles.Title = styles.TitleStyle
+	publicList.DisableQuitKeybindings()
 	publicList.SetShowPagination(true)
 
 		
@@ -170,7 +167,7 @@ func (m MainChatModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 			} else {
 				if item, ok := m.publicChatrooms.SelectedItem().(chatroomItem); ok {
-					err := m.apiClient.JoinChatroom(fmt.Sprint(item.chatroom.Id))
+					err := m.apiClient.JoinChatroom(item.chatroom.Id)
 					if err != nil {
 						return m, nil
 					}
@@ -179,6 +176,12 @@ func (m MainChatModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		case "q", "ctrl+c":
 			return m, tea.Quit
+		case "L":
+			err := m.apiClient.Logout()
+			if err != nil {
+				return m, nil
+			}
+			return NewLoginModel(m.apiClient), nil
 		}
 	}
 
@@ -193,7 +196,7 @@ func (m MainChatModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 func (m MainChatModel) View() string {
 	header := styles.TitleStyle.Render(fmt.Sprintf("Welcome %s!", m.username)) + "\n"
-	helpText := styles.CommandStyle.Render("[Tab] Switch lists • [/] Filter • [Esc] Clear filter • [Enter] Join/View • [q] Quit") + "\n"
+	helpText := styles.CommandStyle.Render("[Tab] Switch lists • [/] Filter • [Esc] Clear filter • [Enter] Join/View • [q] Quit • [L] Log Out") + "\n"
 
 	// Create horizontal layout
 	userListView := m.userChatrooms.View()
@@ -201,11 +204,11 @@ func (m MainChatModel) View() string {
 
 	// Add highlighting for active list
 	if m.activeListPointer == 0 {
-		userListView = styles.ContainerStyle.Render(userListView)
+		userListView = styles.SelectedItemStyle.Render(userListView)
 		publicListView = styles.InactiveItemStyle.Render(publicListView)
 	} else {
 		userListView = styles.InactiveItemStyle.Render(userListView)
-		publicListView = styles.ContainerStyle.Render(publicListView)
+		publicListView = styles.SelectedItemStyle.Render(publicListView)
 	}
 
 	// Combine lists horizontally

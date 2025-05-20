@@ -139,7 +139,7 @@ func (m LoginModel) View() string {
 	var b strings.Builder
 
 	for i := range m.inputs {
-		b.WriteString(m.inputs[i].View())
+		b.WriteString(styles.InputStyle.Render(m.inputs[i].View()))
 		if i < len(m.inputs) - 1 {
 			b.WriteRune('\n')
 		}

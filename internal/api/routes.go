@@ -16,7 +16,7 @@ func NewServer() {
 	mux := http.NewServeMux()
 
 	mux.HandleFunc("GET /api/health", func(w http.ResponseWriter, r *http.Request) {
-		json.NewEncoder(w).Encode(map[string]interface{}{
+		json.NewEncoder(w).Encode(map[string]any {
 			"Status": "Server connection established",
 		})
 	})
@@ -48,6 +48,7 @@ func NewServer() {
 
 	// Chatroom routes
  	mux.HandleFunc("GET /api/chatrooms", handlers.GetChatrooms)
+	mux.Handle("GET /api/chatrooms/public", middleware.AuthMiddleware(http.HandlerFunc(handlers.GetPublicChatrooms)))
 	mux.Handle("POST /api/chatrooms", middleware.AuthMiddleware(http.HandlerFunc(handlers.CreateChatroom)))
 	mux.Handle("DELETE /api/chatrooms/{id}", middleware.AuthMiddleware(
 		middleware.ChatroomMiddleware(
@@ -89,6 +90,6 @@ func NewServer() {
 
 	// Start the server on port 8080
 	fmt.Println("Server starting on port 8080...")
-	log.Fatal(http.ListenAndServe(":8080", mux))
+	log.Fatal(http.ListenAndServe(":8080", middleware.CheckCORS(mux)))
 }
 

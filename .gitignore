@@ -1,6 +1,5 @@
 **/.env
 **/*.exe
-**/requirements.md
 **/build-errors.log
 **/node_modules/
 !.gitignore

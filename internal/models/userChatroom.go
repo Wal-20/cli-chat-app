@@ -6,6 +6,7 @@ import (
 
 type UserChatroom struct {
 	UserID       uint      `gorm:"primaryKey" json:"user_id"`
+	Name         string    `gorm:"type:varchar(100);not null" json:"name"`
 	ChatroomID   uint      `gorm:"primaryKey" json:"chatroom_id"`
 	IsAdmin      bool      `gorm:"default:false" json:"is_admin"`
 	IsOwner      bool      `gorm:"default:false" json:"is_owner"`

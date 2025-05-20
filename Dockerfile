@@ -1,6 +1,6 @@
 
 # 1. Use official Go base image
-FROM golang:1.21-alpine AS build
+FROM golang:1.24-alpine AS build
 
 # 2. Set working directory (think of it as a cd command)
 WORKDIR /app

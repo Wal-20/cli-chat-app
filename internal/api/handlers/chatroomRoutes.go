@@ -9,7 +9,6 @@ import (
 	"net/http"
 	"time"
 )
-
 func GetChatrooms(w http.ResponseWriter, r *http.Request) {
 	encoder := json.NewEncoder(w)
 	id := r.URL.Query().Get("id")
@@ -42,6 +41,38 @@ func GetChatrooms(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+func GetPublicChatrooms(w http.ResponseWriter, r *http.Request) {
+
+	userID, ok := r.Context().Value("userID").(uint)
+	if !ok || userID == 0 {
+		http.Error(w, "Unauthorized: missing or invalid user ID", http.StatusUnauthorized)
+		return
+	}
+
+	encoder := json.NewEncoder(w)
+	var chatrooms []models.Chatroom
+
+	// Get public chatrooms which user is not a part of
+	subquery := config.DB.
+	Table("user_chatrooms").
+	Select("chatroom_id").
+	Where("user_id = ?", userID)
+
+	result := config.DB.
+	Preload("Users").
+	Where("id NOT IN (?)", subquery).
+	Find(&chatrooms)
+	if result.Error != nil {
+		http.Error(w, "Failed to retrieve chatrooms", http.StatusInternalServerError)
+		return
+	}
+
+	encoder.Encode(map[string]interface{}{
+		"Chatrooms": chatrooms,
+	})
+
+}
+
 func GetUsersByChatroom(w http.ResponseWriter, r *http.Request) {
 	encoder := json.NewEncoder(w)
 	chatroomId := r.PathValue("id")
@@ -63,6 +94,7 @@ func GetUsersByChatroom(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+
 func GetMessagesByChatroom(w http.ResponseWriter, r *http.Request) {
 	chatroomId := r.PathValue("id")
 	encoder := json.NewEncoder(w)
@@ -73,19 +105,19 @@ func GetMessagesByChatroom(w http.ResponseWriter, r *http.Request) {
 	}
 
 	searchTerms := r.URL.Query().Get("search")
-	var messages []models.Message
+	var messages []models.MessageWithUser
 
-	// Build the query
-	query := config.DB.Where("chatroom_id = ?", chatroomId)
+	query := config.DB.
+		Table("messages").
+		Select("messages.content, messages.created_at, users.name AS username").
+		Joins("JOIN users ON messages.user_id = users.id").
+		Where("messages.chatroom_id = ?", chatroomId)
 
-	// Add search terms if provided
 	if searchTerms != "" {
-		query = query.Where("content LIKE ?", "%"+searchTerms+"%")
+		query = query.Where("messages.content LIKE ?", "%"+searchTerms+"%")
 	}
 
-	// Execute the query
-	err := query.Order("created_at ASC").Limit(20).Find(&messages).Error
-
+	err := query.Order("messages.created_at ASC").Limit(20).Scan(&messages).Error
 	if err != nil {
 		http.Error(w, "No messages found", http.StatusNotFound)
 		return
@@ -95,6 +127,7 @@ func GetMessagesByChatroom(w http.ResponseWriter, r *http.Request) {
 		"Messages": messages,
 	})
 }
+
 
 func CreateChatroom(w http.ResponseWriter, r *http.Request) {
 	userID, ok := r.Context().Value("userID").(uint)
@@ -150,8 +183,8 @@ func CreateChatroom(w http.ResponseWriter, r *http.Request) {
 	now := time.Now()
 	// Add entries to UserChatroom
 	userChatrooms := []models.UserChatroom{
-		{UserID: userID, ChatroomID: newChatRoom.Id, IsJoined: true, LastJoinTime: &now, IsAdmin: true},
-		{UserID: requestBody.RecipientID, ChatroomID: newChatRoom.Id, IsJoined: false, LastJoinTime: &now},
+		{UserID: userID,Name: users[0].Name ,ChatroomID: newChatRoom.Id, IsJoined: true, LastJoinTime: &now, IsAdmin: true},
+		{UserID: requestBody.RecipientID,Name: users[1].Name ,ChatroomID: newChatRoom.Id, IsJoined: false, LastJoinTime: &now},
 	}
 	if err := config.DB.Create(&userChatrooms).Error; err != nil {
 		http.Error(w, "Failed to link users to chatroom", http.StatusInternalServerError)
@@ -212,6 +245,11 @@ func JoinChatroom(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Unauthorized: missing or invalid user ID", http.StatusUnauthorized)
 		return
 	}
+	username, ok := r.Context().Value("username").(string)
+	if !ok || username == "" {
+		http.Error(w, "Unauthorized: missing or invalid username", http.StatusUnauthorized)
+		return
+	}
 
 	chatroomID := r.PathValue("id")
 	if chatroomID == "" {
@@ -236,6 +274,7 @@ func JoinChatroom(w http.ResponseWriter, r *http.Request) {
 			now := time.Now()
 			newUserChatroom := models.UserChatroom{
 				UserID:       userID,
+				Name:         username,
 				ChatroomID:   chatroom.Id,
 				LastJoinTime: &now,
 			}
@@ -361,7 +400,7 @@ func LeaveChatroom(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "Error deleting chatroom", http.StatusInternalServerError)
 			return
 		}
-		json.NewEncoder(w).Encode(map[string]interface{}{
+		json.NewEncoder(w).Encode(map[string]any{
 			"Status": "Chatroom deleted as last user left",
 		})
 		return

@@ -87,8 +87,15 @@ func AuthMiddleware(next http.Handler) http.Handler {
 		}
 		userID := uint(userIDFloat)
 
-		// Store the userID in the context
+		username, ok := claims["username"]
+		if !ok {
+			http.Error(w, "Invalid Username in Claims", http.StatusUnauthorized)
+			return
+		}
+
 		ctx := context.WithValue(r.Context(), "userID", userID)
+		ctx = context.WithValue(ctx, "username", username)
+
 		r = r.WithContext(ctx)
 
 		// Continue to the next handler
