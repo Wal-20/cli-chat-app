@@ -30,7 +30,7 @@ var (
 
 	TitleStyle = lipgloss.NewStyle().
 			Bold(true).
-			Background(PrimaryColor.Value())
+			Foreground(PrimaryColor.Value())
 
 	SectionStyle = lipgloss.NewStyle().
 			BorderStyle(lipgloss.RoundedBorder()).
@@ -55,9 +55,8 @@ var (
 			Margin(1, 2)
 
 	ContainerStyle = lipgloss.NewStyle().
-			BorderForeground(lipgloss.Color(PrimaryColor.value)).
 			Padding(2).
-			Margin(2)
+			Margin(2, 0, 2, 2)
 
 	SidebarStyle = lipgloss.NewStyle().
 			Width(30).
@@ -114,9 +113,7 @@ var (
 
 	InputStyle = lipgloss.NewStyle().
 			Foreground(lipgloss.Color("#999999")).
-			BorderStyle(lipgloss.RoundedBorder()).
-			BorderForeground(PrimaryColor.Value()).
-			Width(40)
+			Width(40).MarginTop(1)
 
 	NavStyle = lipgloss.NewStyle().
 			Bold(true).
@@ -136,7 +133,6 @@ var (
 
 	DateSeparatorStyle = lipgloss.NewStyle().
 	Foreground(lipgloss.Color("#71717a")).
-	Margin(0, 2, 1, 0).
 	Align(lipgloss.Center)
 
 	PaginationStyle = lipgloss.NewStyle().

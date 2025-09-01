@@ -3,11 +3,14 @@ package handlers
 import (
 	"encoding/json"
 	"errors"
-	"github.com/Wal-20/cli-chat-app/internal/config"
-	"github.com/Wal-20/cli-chat-app/internal/models"
-	"gorm.io/gorm"
+	"fmt"
 	"net/http"
 	"time"
+
+	"github.com/Wal-20/cli-chat-app/internal/config"
+	"github.com/Wal-20/cli-chat-app/internal/models"
+	"github.com/Wal-20/cli-chat-app/internal/utils"
+	"gorm.io/gorm"
 )
 func GetChatrooms(w http.ResponseWriter, r *http.Request) {
 	encoder := json.NewEncoder(w)
@@ -388,6 +391,8 @@ func LeaveChatroom(w http.ResponseWriter, r *http.Request) {
 
 	userChatroom.IsJoined = false
 	userChatroom.IsInvited = false
+
+	utils.MembershipCache.Delete(fmt.Sprintf("membership:%v:%s", userId, chatroomId))
 
 	// Check if last user is leaving
 	var remainingUsers int64

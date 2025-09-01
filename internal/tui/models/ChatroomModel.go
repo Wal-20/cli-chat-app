@@ -1,4 +1,3 @@
-
 package models
 
 import (
@@ -52,7 +51,7 @@ func NewChatroomModel(username string, chatroom models.Chatroom, apiClient *clie
 		users:       users,
 		messages:    messages,
 		input:       input,
-		scrollIndex: max(0, len(messages) - maxVisibleMessages),
+		scrollIndex: max(0, len(messages)-maxVisibleMessages),
 	}
 }
 
@@ -106,6 +105,26 @@ func (m ChatroomModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, cmd
 }
 
+func wrapText(text string, width int) string {
+	var wrapped strings.Builder
+	words := strings.Fields(text)
+	lineLength := 0
+
+	for _, word := range words {
+		if lineLength+len(word)+1 > width {
+			wrapped.WriteString("\n")
+			lineLength = 0
+		}
+		if lineLength > 0 {
+			wrapped.WriteString(" ")
+			lineLength++
+		}
+		wrapped.WriteString(word)
+		lineLength += len(word)
+	}
+
+	return wrapped.String()
+}
 
 func (m ChatroomModel) View() string {
 	var sb strings.Builder
@@ -144,7 +163,7 @@ func (m ChatroomModel) View() string {
 		}
 
 		msgBlock.WriteString(roleStyle.Render(message.Username) + "\n")
-		msgBlock.WriteString(styles.MessageStyle.Render(message.Content) + "\n")
+		msgBlock.WriteString(styles.MessageStyle.Render(wrapText(message.Content, 50)) + "\n") // Wrap text at 50 characters
 		msgBlock.WriteString(styles.TimestampStyle.Render(timestamp) + "\n")
 
 		sb.WriteString(msgBlock.String() + "\n")
@@ -209,4 +228,3 @@ func max(a, b int) int {
 	}
 	return b
 }
-

@@ -25,7 +25,7 @@ func NewServer() {
 	mux.HandleFunc("GET /api/users", handlers.GetUsers)
 	mux.HandleFunc("POST /api/users", handlers.CreateUser)
 	mux.HandleFunc("POST /api/users/login", handlers.Login)
-    mux.Handle("POST /api/users/logout", middleware.AuthMiddleware(http.HandlerFunc(handlers.LogOut)))
+    mux.HandleFunc("POST /api/users/logout", handlers.LogOut)
     mux.Handle("POST /api/users/update", middleware.AuthMiddleware(http.HandlerFunc(handlers.UpdateUser)))
     mux.Handle("GET /api/users/chatrooms", middleware.AuthMiddleware(http.HandlerFunc(handlers.GetChatroomsByUser)))
 

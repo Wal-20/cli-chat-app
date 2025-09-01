@@ -118,18 +118,19 @@ func Login(w http.ResponseWriter, r *http.Request) {
 	// Load token pair from storage
 	tokenPair, err := utils.LoadTokenPair()
 	if err == nil && tokenPair.AccessToken != "" {
-		// Validate the existing access token
+
 		claims, err := utils.ValidateJWTToken(tokenPair.AccessToken)
 		if err == nil && claims["userID"] == userDB.ID {
 			// Check if the token belongs to the current user
-			encoder.Encode(map[string]interface{}{
+			encoder.Encode(map[string] any {
 				"Status":      "user already logged in",
 				"AccessToken": tokenPair.AccessToken,
 			})
 			return
+		} else if err != nil {
+			tokenPair.AccessToken = ""
+			tokenPair.RefreshToken = ""
 		}
-		tokenPair.AccessToken = ""
-		tokenPair.RefreshToken = ""
 	}
 
 	accessToken, err := utils.GenerateJWTToken(userDB.ID, userDB.Name)
@@ -138,15 +139,20 @@ func Login(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	refreshToken, err := utils.GenerateRefreshToken(userDB.ID, userDB.Name )
-	if err != nil {
-		http.Error(w, "Error generating refresh token", http.StatusInternalServerError)
-		return
+	var refreshToken string
+
+	if tokenPair.RefreshToken == "" {
+		refreshToken, err := utils.GenerateRefreshToken(userDB.ID, userDB.Name )
+		if err != nil {
+			http.Error(w, "Error generating refresh token", http.StatusInternalServerError)
+			return
+		}
+		tokenPair.RefreshToken = refreshToken
 	}
 
 	tokenPair = utils.TokenPair{
 		AccessToken:  accessToken,
-		RefreshToken: refreshToken,
+		RefreshToken: tokenPair.RefreshToken,
 	}
 	if err := utils.SaveTokenPair(tokenPair); err != nil {
 		http.Error(w, "Error saving credentials", http.StatusInternalServerError)
@@ -172,7 +178,6 @@ func Login(w http.ResponseWriter, r *http.Request) {
 
 
 func LogOut(w http.ResponseWriter, r *http.Request) {
-	// Delete the refresh token from the user's device
 	
 	tokenPair, err := utils.LoadTokenPair()
 	if err != nil {
@@ -182,6 +187,9 @@ func LogOut(w http.ResponseWriter, r *http.Request) {
 
 	tokenPair.AccessToken = ""
 	tokenPair.RefreshToken = ""
+
+	utils.AuthCache.Delete(tokenPair.AccessToken)
+	utils.AuthCache.Delete(tokenPair.RefreshToken)
 
 	if err := utils.SaveTokenPair(tokenPair); err != nil {
 		http.Error(w, "Error saving token pair", http.StatusInternalServerError)

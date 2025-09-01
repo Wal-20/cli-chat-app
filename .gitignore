@@ -1,6 +1,7 @@
 **/.env
 **/*.exe
+tmp/*.exe
 **/build-errors.log
 **/node_modules/
 !.gitignore
-
+.vscode/
