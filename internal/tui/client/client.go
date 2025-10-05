@@ -1,41 +1,86 @@
 package client
 
 import (
-	"bytes"
-	"encoding/json"
-	"strings"
-	"github.com/joho/godotenv"
-	"os"
-	"fmt"
-	"log"
-	"io"
-	"net/http"
-	"github.com/Wal-20/cli-chat-app/internal/models"
+    "bytes"
+    "encoding/json"
+    "fmt"
+    "io"
+    "net/http"
+    "net/url"
+    "os"
+    stdpath "path"
+    "path/filepath"
+    "strings"
+    "time"
+
+    "github.com/joho/godotenv"
+    "github.com/patrickmn/go-cache"
+
+    "github.com/Wal-20/cli-chat-app/internal/models"
+    "github.com/gorilla/websocket"
 )
 
 type APIClient struct {
-	baseURL     string
-	httpClient  *http.Client
-	accessToken string
+    baseURL     string
+    httpClient  *http.Client
+    accessToken string
+    cache       *cache.Cache
 }
 
+// loadEnvFile attempts to ensure SERVER_URL is available. It first respects an
+// existing environment variable, then attempts to load .env from the current
+// directory or any parent directory up to the filesystem root.
+func loadEnvFile() error {
+	if strings.TrimSpace(os.Getenv("SERVER_URL")) != "" {
+		return nil
+	}
+
+	if err := godotenv.Load(); err == nil { // CWD
+		if strings.TrimSpace(os.Getenv("SERVER_URL")) != "" {
+			return nil
+		}
+	}
+
+	cwd, err := os.Getwd()
+	if err != nil {
+		return err
+	}
+
+	for {
+		envPath := filepath.Join(cwd, ".env")
+		if _, statErr := os.Stat(envPath); statErr == nil {
+			if err := godotenv.Load(envPath); err == nil {
+				if strings.TrimSpace(os.Getenv("SERVER_URL")) != "" {
+					return nil
+				}
+			}
+		}
+
+		parent := filepath.Dir(cwd)
+		if parent == cwd {
+			break
+		}
+		cwd = parent
+	}
+
+	return fmt.Errorf("SERVER_URL not set; create a .env with SERVER_URL or export it")
+}
 
 func NewAPIClient() (*APIClient, error) {
-
-	err := godotenv.Load()
-	if err != nil {
-		log.Fatalf("Error loading environment variables: %v", err)
+	if err := loadEnvFile(); err != nil {
+		return nil, fmt.Errorf("load environment: %w", err)
 	}
 
-	SERVER_URL := os.Getenv("SERVER_URL") 
-	if SERVER_URL == "" {
-		log.Fatal("CANNOT READ SERVER_URI IN ENVIRONMENT")
+	serverURL := strings.TrimSuffix(strings.TrimSpace(os.Getenv("SERVER_URL")), "/")
+	if serverURL == "" {
+		return nil, fmt.Errorf("SERVER_URL is not set in environment")
 	}
 
-	baseURL := SERVER_URL + "/api"
+	baseURL := serverURL + "/api"
 	client := &http.Client{}
 
-	req, err := http.NewRequest("GET", baseURL + "/health", nil)
+	// quick health check so we can surface a nice error early
+	req, err := http.NewRequest("GET", baseURL+"/health", nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create test request: %w", err)
 	}
@@ -46,25 +91,23 @@ func NewAPIClient() (*APIClient, error) {
 	}
 	defer resp.Body.Close()
 
-	// Check for a successful response
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		return nil, fmt.Errorf("server returned unexpected status: %s", resp.Status)
 	}
 
-	return &APIClient{
-		baseURL:    baseURL,
-		httpClient: client,
-	}, nil
+    return &APIClient{
+        baseURL:    baseURL,
+        httpClient: client,
+        // Cache with a small TTL to improve UX while keeping data fresh
+        cache:      cache.New(2*time.Minute, 30*time.Second),
+    }, nil
 }
-
 
 func (c *APIClient) SetToken(token string) {
 	c.accessToken = token
 }
 
-
 // Auth endpoints
-
 
 func (c *APIClient) LoginOrRegister(username, password string) (map[string]interface{}, error) {
 	data := map[string]interface{}{
@@ -88,11 +131,12 @@ func (c *APIClient) LoginOrRegister(username, password string) (map[string]inter
 	return nil, err
 }
 
-
-
 func (c *APIClient) Logout() error {
-	_, err := c.post("/users/logout", nil)
-	return err
+    _, err := c.post("/users/logout", nil)
+    if err == nil && c.cache != nil {
+        c.cache.Flush()
+    }
+    return err
 }
 
 // Chatroom endpoints
@@ -114,19 +158,35 @@ func (c *APIClient) GetChatrooms() ([]models.Chatroom, error) {
 	return result.Chatrooms, nil
 }
 
-
 func (c *APIClient) GetUserChatrooms() ([]models.Chatroom, error) {
-	resp, err := c.get("/users/chatrooms")
-	if err != nil {
-		return nil, err
-	}
-	var result struct {
-		Chatrooms []models.Chatroom `json:"Chatrooms"`
-	}
-	err = json.Unmarshal(resp, &result)
-	return result.Chatrooms, err
-}
+    // Try cache first
+    if c.cache != nil {
+        if v, ok := c.cache.Get("user_chatrooms"); ok {
+            if rooms, ok := v.([]models.Chatroom); ok {
+                // Return a copy to avoid external mutation of cached slice
+                cp := append([]models.Chatroom(nil), rooms...)
+                return cp, nil
+            }
+        }
+    }
 
+    resp, err := c.get("/users/chatrooms")
+    if err != nil {
+        return nil, err
+    }
+    var result struct {
+        Chatrooms []models.Chatroom `json:"Chatrooms"`
+    }
+    if err := json.Unmarshal(resp, &result); err != nil {
+        return nil, err
+    }
+    if c.cache != nil {
+        // Store a copy
+        cp := append([]models.Chatroom(nil), result.Chatrooms...)
+        c.cache.Set("user_chatrooms", cp, cache.DefaultExpiration)
+    }
+    return result.Chatrooms, nil
+}
 
 func (c *APIClient) GetUsersByChatroom(chatroomID uint) ([]models.UserChatroom, error) {
 	endpoint := fmt.Sprintf("/chatrooms/%v/users", chatroomID)
@@ -148,39 +208,118 @@ func (c *APIClient) GetUsersByChatroom(chatroomID uint) ([]models.UserChatroom, 
 	return result.UserChatroom, nil
 }
 
-
 func (c *APIClient) JoinChatroom(chatroomID uint) error {
-	_, err := c.post(fmt.Sprintf("/chatrooms/%v/join", chatroomID), nil)
-	return err
+    _, err := c.post(fmt.Sprintf("/chatrooms/%v/join", chatroomID), nil)
+    if err == nil && c.cache != nil {
+        // User chatroom list likely changed
+        c.cache.Delete("user_chatrooms")
+    }
+    return err
 }
 
 func (c *APIClient) LeaveChatroom(chatroomID string) error {
-	_, err := c.post(fmt.Sprintf("/chatrooms/%s/leave", chatroomID), nil)
-	return err
+    _, err := c.post(fmt.Sprintf("/chatrooms/%s/leave", chatroomID), nil)
+    if err == nil && c.cache != nil {
+        c.cache.Delete("user_chatrooms")
+        // Also drop any cached messages for this room
+        c.cache.Delete("chatroom_messages:" + chatroomID)
+    }
+    return err
 }
 
 // Message endpoints
 func (c *APIClient) GetMessages(chatroomID uint) ([]models.MessageWithUser, error) {
-	resp, err := c.get(fmt.Sprintf("/chatrooms/%v/messages", chatroomID))
-	if err != nil {
-		return nil, err
-	}
-	var result struct {
-		Messages []models.MessageWithUser `json:"Messages"`
-	}
-	err = json.Unmarshal(resp, &result)
-	return result.Messages, err
+    key := fmt.Sprintf("chatroom_messages:%v", chatroomID)
+    if c.cache != nil {
+        if v, ok := c.cache.Get(key); ok {
+            if msgs, ok := v.([]models.MessageWithUser); ok {
+                cp := append([]models.MessageWithUser(nil), msgs...)
+                return cp, nil
+            }
+        }
+    }
+
+    resp, err := c.get(fmt.Sprintf("/chatrooms/%v/messages", chatroomID))
+    if err != nil {
+        return nil, err
+    }
+    var result struct {
+        Messages []models.MessageWithUser `json:"Messages"`
+    }
+    if err := json.Unmarshal(resp, &result); err != nil {
+        return nil, err
+    }
+    if c.cache != nil {
+        cp := append([]models.MessageWithUser(nil), result.Messages...)
+        c.cache.Set(key, cp, cache.DefaultExpiration)
+    }
+    return result.Messages, nil
 }
 
-func (c *APIClient) SendMessage(chatroomID, content string) (map[string]any, error){
-	data := map[string]any{
-		"content": content,
-	}
-	res, err := c.post(fmt.Sprintf("/chatrooms/%s/messages", chatroomID), data)
-	if err != nil {
-		return nil, err
-	}
-	return res, nil
+func (c *APIClient) SendMessage(chatroomID, content string) (map[string]any, error) {
+    data := map[string]any{
+        "content": content,
+    }
+    res, err := c.post(fmt.Sprintf("/chatrooms/%s/messages", chatroomID), data)
+    if err != nil {
+        return nil, err
+    }
+    // Invalidate cached messages for this chatroom to ensure refresh
+    if c.cache != nil {
+        c.cache.Delete("chatroom_messages:" + chatroomID)
+    }
+    return res, nil
+}
+
+// SubscribeChatroom opens a websocket to receive live messages for a chatroom.
+// It returns a channel of messages and a cancel function to close the stream.
+func (c *APIClient) SubscribeChatroom(chatroomID uint) (<-chan models.MessageWithUser, func(), error) {
+    if c.baseURL == "" {
+        return nil, nil, fmt.Errorf("client not initialized")
+    }
+    u, err := url.Parse(c.baseURL)
+    if err != nil {
+        return nil, nil, err
+    }
+    if u.Scheme == "https" {
+        u.Scheme = "wss"
+    } else {
+        u.Scheme = "ws"
+    }
+    u.Path = stdpath.Join(u.Path, fmt.Sprintf("chatrooms/%d/ws", chatroomID))
+
+    header := http.Header{}
+    if c.accessToken != "" {
+        header.Set("Authorization", "Bearer "+c.accessToken)
+    }
+    conn, resp, err := websocket.DefaultDialer.Dial(u.String(), header)
+    if err != nil {
+        if resp != nil {
+            return nil, nil, fmt.Errorf("ws dial failed: %s", resp.Status)
+        }
+        return nil, nil, fmt.Errorf("ws dial error: %w", err)
+    }
+
+    ch := make(chan models.MessageWithUser, 32)
+    go func() {
+        defer close(ch)
+        for {
+            _, data, err := conn.ReadMessage()
+            if err != nil {
+                return
+            }
+            var m models.MessageWithUser
+            if err := json.Unmarshal(data, &m); err == nil {
+                ch <- m
+            }
+        }
+    }()
+
+    cancel := func() {
+        _ = conn.WriteMessage(websocket.CloseMessage, websocket.FormatCloseMessage(websocket.CloseNormalClosure, "bye"))
+        _ = conn.Close()
+    }
+    return ch, cancel, nil
 }
 
 // Admin actions
@@ -254,4 +393,3 @@ func (c *APIClient) doRequest(req *http.Request) ([]byte, error) {
 
 	return body, nil // Return the actual response body
 }
-

@@ -64,6 +64,15 @@ func NewServer() {
 		),
 	))
 
+	// WebSocket route for live room updates
+	mux.Handle("GET /api/chatrooms/{id}/ws",
+		middleware.AuthMiddleware(
+			middleware.ChatroomMiddleware(
+				http.HandlerFunc(handlers.ChatroomWebSocket),
+			),
+		),
+	)
+
 	// Message routes
 	mux.Handle("POST /api/chatrooms/{id}/messages",
 		middleware.AuthMiddleware(

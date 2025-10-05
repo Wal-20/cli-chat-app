@@ -1,13 +1,14 @@
 package handlers
 
 import (
-	"encoding/json"
-	"errors"
-	"net/http"
-	"strconv"
-	"github.com/Wal-20/cli-chat-app/internal/config"
-	"github.com/Wal-20/cli-chat-app/internal/models"
-	"gorm.io/gorm"
+    "encoding/json"
+    "errors"
+    "net/http"
+    "strconv"
+    "github.com/Wal-20/cli-chat-app/internal/config"
+    "github.com/Wal-20/cli-chat-app/internal/models"
+    "gorm.io/gorm"
+    apiws "github.com/Wal-20/cli-chat-app/internal/api/ws"
 )
 
 func SendMessage(w http.ResponseWriter, r *http.Request) {
@@ -60,18 +61,34 @@ func SendMessage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	result := config.DB.Create(&message)
+    result := config.DB.Create(&message)
 
-	if result.Error != nil {
-		http.Error(w, "Unable to create messsage", http.StatusInternalServerError)
-		return
-	}
+    if result.Error != nil {
+        http.Error(w, "Unable to create messsage", http.StatusInternalServerError)
+        return
+    }
 
-	encoder.Encode(map[string]interface{}{
-		"Status": "success",
-		"Message": message,
-		"Sender": user.Name,
-	})
+    // Broadcast to websocket subscribers in this chatroom
+    msgWithUser := models.MessageWithUser{
+        Content:   message.Content,
+        CreatedAt: message.CreatedAt,
+        Username:  user.Name,
+    }
+    // Avoid circular import by keeping broadcaster in ws package
+    // and only passing MessageWithUser payloads
+    // NOTE: best-effort; failure to broadcast shouldn't fail the request
+    go func(roomID uint, payload models.MessageWithUser) {
+        defer func() { recover() }()
+        // Import is at top-level
+        // Broadcast inside goroutine to not block HTTP response
+        wsBroadcast(roomID, payload)
+    }(message.ChatroomID, msgWithUser)
+
+    encoder.Encode(map[string]interface{}{
+        "Status":  "success",
+        "Message": message,
+        "Sender":  user.Name,
+    })
 }
 
 
@@ -122,7 +139,12 @@ func DeleteMessage(w http.ResponseWriter, r *http.Request) {
 }
 
 func UpdateMessage(w http.ResponseWriter, r *http.Request) {
-	json.NewEncoder(w).Encode(map[string]interface{}{
-		"message": "not implemented yet",
-	})
+    json.NewEncoder(w).Encode(map[string]interface{}{
+        "message": "not implemented yet",
+    })
+}
+
+// wsBroadcast is a tiny indirection to the ws package for broadcasting.
+func wsBroadcast(roomID uint, payload models.MessageWithUser) {
+    apiws.BroadcastMessage(roomID, payload)
 }

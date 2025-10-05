@@ -13,37 +13,54 @@ import (
 )
 
 type LoginModel struct {
-	apiClient *client.APIClient
-	inputs []textinput.Model
-	cursorMode cursor.Mode
-	focusIndex int
+	apiClient     *client.APIClient
+	inputs        []textinput.Model
+	cursorMode    cursor.Mode
+	focusIndex    int
+	width         int
+	height        int
+	submitting    bool
+	statusMessage string
+	statusStyle   lipgloss.Style
 }
 
-var (
-	focusedStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("205"))
-	blurredStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("240"))
-	noStyle = lipgloss.NewStyle()
-	helpStyle           = blurredStyle
-	cursorModeHelpStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("244"))
-
-	focusedButton = focusedStyle.Render("[ Submit ]")
-	blurredButton = fmt.Sprintf("[ %s ]", blurredStyle.Render("Submit"))
-)
+type loginResultMsg struct {
+	username string
+	token    string
+	err      error
+}
 
 func NewLoginModel(apiClient *client.APIClient) LoginModel {
-
 	username := textinput.New()
 	username.Placeholder = "Username"
+	username.CharLimit = 48
+	username.Prompt = "> "
+	username.PromptStyle = styles.InputPromptFocusedStyle
+	username.TextStyle = styles.InputTextFocusedStyle
+	username.PlaceholderStyle = styles.InputPlaceholderStyle
+	username.Cursor.Style = styles.KeyStyle
+	username.Width = 36
 	username.Focus()
 
 	password := textinput.New()
 	password.Placeholder = "Password"
+	password.CharLimit = 64
+	password.Prompt = "> "
+	password.PromptStyle = styles.InputPromptStyle
+	password.TextStyle = styles.InputTextStyle
+	password.PlaceholderStyle = styles.InputPlaceholderStyle
+	password.Cursor.Style = styles.KeyStyle
 	password.EchoMode = textinput.EchoPassword
-	password.EchoCharacter = '•'
+	password.EchoCharacter = '*'
+	password.Width = 36
 
 	return LoginModel{
-		apiClient: apiClient,
-		inputs: []textinput.Model{username, password},
+		apiClient:     apiClient,
+		inputs:        []textinput.Model{username, password},
+		cursorMode:    cursor.CursorBlink,
+		focusIndex:    0,
+		statusMessage: "Enter your credentials to join or create chatrooms.",
+		statusStyle:   styles.StatusMessageStyle,
 	}
 }
 
@@ -53,108 +70,194 @@ func (m LoginModel) Init() tea.Cmd {
 
 func (m LoginModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
+	case tea.WindowSizeMsg:
+		m.width = msg.Width
+		m.height = msg.Height
+		fieldWidth := msg.Width - 20
+		if fieldWidth > 48 {
+			fieldWidth = 48
+		}
+		if fieldWidth < 28 {
+			fieldWidth = 28
+		}
+		for i := range m.inputs {
+			m.inputs[i].Width = fieldWidth
+		}
+		return m, nil
 
-		case tea.KeyMsg:
+	case tea.KeyMsg:
+		switch msg.String() {
+		case "ctrl+c", "q":
+			return m, tea.Quit
 
-			switch msg.String() {
-
-			case "ctrl+c", "q":
-				return m, tea.Quit
-
-			case "ctrl+r":
-				m.cursorMode++
-				if m.cursorMode > cursor.CursorHide {
-					m.cursorMode = cursor.CursorBlink
-				}
-				cmds := make([]tea.Cmd, len(m.inputs))
-
-				for i := range m.inputs {
-					cmds[i] = m.inputs[i].Cursor.SetMode(m.cursorMode)
-				}
-				
-				return m, tea.Batch(cmds...) // returns the updated model and performs a bunch of commands
-
-			case "tab", "shift+tab", "enter", "up", "down":
-				s := msg.String()
-				if s == "enter" && m.focusIndex == len(m.inputs) {
-					username := m.inputs[0].Value()
-					password := m.inputs[1].Value()
-
-					res, err := m.apiClient.LoginOrRegister(username, password)
-
-					if err != nil {
-						panic(err)
-					}
-					m.apiClient.SetToken(res["AccessToken"].(string))
-
-					return NewMainChatModel(username, m.apiClient), nil
-				}
-				if s == "tab" || s == "enter" || s == "down" {
-					m.focusIndex++
-				} else {
-					m.focusIndex--
-				}
-
-				if m.focusIndex < 0 {
-					m.focusIndex = len(m.inputs)
-				} else if m.focusIndex > len(m.inputs) {
-					m.focusIndex = 0
-				}
-
-				// checking for selected input, updating it's style
-				cmds := make([]tea.Cmd, len(m.inputs))
-				for i := 0; i < len(m.inputs); i++ {
-					if i == m.focusIndex {
-						cmds[i] = m.inputs[i].Focus()
-						m.inputs[i].PromptStyle = focusedStyle
-						m.inputs[i].TextStyle = focusedStyle
-						continue
-					}
-					// Remove focused state
-					m.inputs[i].Blur()
-					m.inputs[i].PromptStyle = noStyle
-					m.inputs[i].TextStyle = noStyle
-				}
-				return m, tea.Batch(cmds...)
+		case "ctrl+r":
+			if m.submitting {
+				return m, nil
 			}
-			cmd := m.updateInputs(msg)
-			return m, cmd
+			m.cursorMode++
+			if m.cursorMode > cursor.CursorHide {
+				m.cursorMode = cursor.CursorBlink
+			}
+			cmds := make([]tea.Cmd, len(m.inputs))
+			for i := range m.inputs {
+				cmds[i] = m.inputs[i].Cursor.SetMode(m.cursorMode)
+			}
+			m.statusMessage = fmt.Sprintf("Cursor mode: %s", m.cursorMode.String())
+			m.statusStyle = styles.StatusInfoStyle
+			return m, tea.Batch(cmds...)
+
+		case "tab", "shift+tab", "enter", "up", "down":
+			if m.submitting {
+				return m, nil
+			}
+
+			s := msg.String()
+			if s == "enter" && m.focusIndex == len(m.inputs) {
+				username := strings.TrimSpace(m.inputs[0].Value())
+				password := strings.TrimSpace(m.inputs[1].Value())
+				if username == "" || password == "" {
+					m.statusMessage = "Username and password are required."
+					m.statusStyle = styles.StatusErrorStyle
+					return m, nil
+				}
+
+				m.submitting = true
+				m.statusMessage = "Authenticating..."
+				m.statusStyle = styles.StatusInfoStyle
+				return m, tea.Batch(m.applyFocusStyles(), login(m.apiClient, username, password))
+			}
+
+			if s == "tab" || s == "enter" || s == "down" {
+				m.focusIndex++
+			} else {
+				m.focusIndex--
+			}
+
+			if m.focusIndex < 0 {
+				m.focusIndex = len(m.inputs)
+			} else if m.focusIndex > len(m.inputs) {
+				m.focusIndex = 0
+			}
+
+			return m, m.applyFocusStyles()
+		}
+
+	case loginResultMsg:
+		m.submitting = false
+		if msg.err != nil {
+			m.statusMessage = msg.err.Error()
+			m.statusStyle = styles.StatusErrorStyle
+			m.focusIndex = 0
+			m.inputs[1].Reset()
+			return m, m.applyFocusStyles()
+		}
+
+		m.apiClient.SetToken(msg.token)
+		return NewMainChatModel(msg.username, m.apiClient), nil
 	}
-	return m, nil
-}
 
-func (m *LoginModel) updateInputs(msg tea.Msg) tea.Cmd {
 	cmds := make([]tea.Cmd, len(m.inputs))
-
-	// Only text inputs with Focus() set will respond, so it's safe to simply
-	// update all of them here without any further logic.
 	for i := range m.inputs {
 		m.inputs[i], cmds[i] = m.inputs[i].Update(msg)
+	}
+
+	return m, tea.Batch(cmds...)
+}
+
+func (m LoginModel) applyFocusStyles() tea.Cmd {
+	cmds := make([]tea.Cmd, len(m.inputs))
+	for i := range m.inputs {
+		if i == m.focusIndex {
+			m.inputs[i].PromptStyle = styles.InputPromptFocusedStyle
+			m.inputs[i].TextStyle = styles.InputTextFocusedStyle
+			m.inputs[i].PlaceholderStyle = styles.InputPlaceholderStyle
+			if !m.inputs[i].Focused() {
+				cmds[i] = m.inputs[i].Focus()
+			}
+			continue
+		}
+
+		m.inputs[i].PromptStyle = styles.InputPromptStyle
+		m.inputs[i].TextStyle = styles.InputTextStyle
+		m.inputs[i].PlaceholderStyle = styles.InputPlaceholderStyle
+		if m.inputs[i].Focused() {
+			m.inputs[i].Blur()
+		}
 	}
 
 	return tea.Batch(cmds...)
 }
 
 func (m LoginModel) View() string {
-	var b strings.Builder
-
+	fields := make([]string, len(m.inputs))
 	for i := range m.inputs {
-		b.WriteString(styles.InputStyle.Render(m.inputs[i].View()))
-		if i < len(m.inputs) - 1 {
-			b.WriteRune('\n')
+		view := m.inputs[i].View()
+		if i == m.focusIndex {
+			fields[i] = styles.InputFieldFocusedStyle.Render(view)
+		} else {
+			fields[i] = styles.InputFieldStyle.Render(view)
 		}
 	}
 
-	button := &blurredButton
-	if m.focusIndex == len(m.inputs) {
-		button = &focusedButton
+	form := strings.Join(fields, "\n\n")
+	button := styles.RenderButton("Sign in / Register", m.focusIndex == len(m.inputs))
+
+	status := ""
+	if m.statusMessage != "" {
+		status = m.statusStyle.Render(m.statusMessage)
 	}
-	fmt.Fprintf(&b, "\n\n%s\n\n", *button)
 
-	b.WriteString(helpStyle.Render("cursor mode is "))
-	b.WriteString(cursorModeHelpStyle.Render(m.cursorMode.String()))
-	b.WriteString(helpStyle.Render(" (ctrl+r to change style)"))
+	helpItems := []string{
+		styles.RenderKeyBinding("Tab", "Next field"),
+		styles.RenderKeyBinding("Shift+Tab", "Previous"),
+		styles.RenderKeyBinding("Enter", "Submit"),
+		styles.RenderKeyBinding("Ctrl+R", fmt.Sprintf("Cursor: %s", m.cursorMode.String())),
+		styles.RenderKeyBinding("Ctrl+C", "Quit"),
+	}
+	help := strings.Join(helpItems, styles.HelpStyle.Render("  "))
 
-	return styles.ContainerStyle.Render(b.String())
+	sections := []string{
+		styles.CardTitleStyle.Render("CLI Chat"),
+		styles.CardSubtitleStyle.Render("Your space to talk from the terminal."),
+		form,
+		button,
+	}
+
+	if status != "" {
+		sections = append(sections, status)
+	}
+
+	sections = append(sections, styles.HelpStyle.Render(help))
+
+	content := strings.Join(sections, "\n\n")
+	card := styles.CardStyle.Render(content)
+
+    if m.width > 0 && m.height > 0 {
+        card = lipgloss.Place(
+            m.width,
+            m.height,
+            lipgloss.Center,
+            lipgloss.Center,
+            card,
+        )
+        return styles.AppStyle.Copy().Width(m.width).Height(m.height).Render(card)
+    }
+
+	return styles.AppStyle.Render(card)
 }
 
+func login(apiClient *client.APIClient, username, password string) tea.Cmd {
+	return func() tea.Msg {
+		res, err := apiClient.LoginOrRegister(username, password)
+		if err != nil {
+			return loginResultMsg{err: err}
+		}
+
+		token, ok := res["AccessToken"].(string)
+		if !ok || token == "" {
+			return loginResultMsg{err: fmt.Errorf("authentication failed: missing access token")}
+		}
+
+		return loginResultMsg{username: username, token: token}
+	}
+}

@@ -2,140 +2,98 @@ package styles
 
 import (
 	"fmt"
+
 	"github.com/charmbracelet/lipgloss"
 )
 
-type color interface {
-	Value() lipgloss.Color
-}
-
-type ColorType struct {
-	value lipgloss.Color
-}
-
-func (c ColorType) Value() lipgloss.Color {
-	return c.value
-}
+// Keep a simple, terminal-native look: no backgrounds and minimal borders.
+var (
+	// Palette (used for foregrounds only)
+	primaryColor   = lipgloss.Color("#c084fc") // accent, not background
+	secondaryColor = lipgloss.Color("#38bdf8")
+	successColor   = lipgloss.Color("#34d399")
+	dangerColor    = lipgloss.Color("#f87171")
+	textMutedColor = lipgloss.Color("#94a3b8")
+)
 
 var (
-	PrimaryColor   = ColorType{lipgloss.Color("#D12182")}
-	SecondaryColor = ColorType{lipgloss.Color("#874BFD")}
-	AccentColor    = ColorType{lipgloss.Color("#FFFFFF")}
-	MutedColor     = ColorType{lipgloss.Color("#4A4A4A")}
+	// Root app style: no padding/background so terminal shows through
+	AppStyle = lipgloss.NewStyle()
 
-	RedColor     = ColorType{lipgloss.Color("9")}
-	MagentaColor = ColorType{lipgloss.Color("5")}
-	AquaColor    = ColorType{lipgloss.Color("86")}
-	LimeColor = ColorType{lipgloss.Color("#00FF77")}
+	TitleStyle              = lipgloss.NewStyle().Bold(true)
+	SubtitleStyle           = lipgloss.NewStyle().Foreground(textMutedColor)
+	SectionTitleStyle       = lipgloss.NewStyle().Bold(true)
+	SectionDescriptionStyle = lipgloss.NewStyle().Foreground(textMutedColor)
+	MutedTextStyle          = lipgloss.NewStyle().Foreground(textMutedColor)
+	EmphasisTextStyle       = lipgloss.NewStyle().Foreground(secondaryColor)
+	HelpStyle               = lipgloss.NewStyle().Foreground(textMutedColor)
+	KeyStyle                = lipgloss.NewStyle().Foreground(primaryColor).Bold(true)
 
-	TitleStyle = lipgloss.NewStyle().
-			Bold(true).
-			Foreground(PrimaryColor.Value())
+	// Status/footers with no backgrounds
+	StatusBarStyle     = lipgloss.NewStyle()
+	StatusMessageStyle = lipgloss.NewStyle().Foreground(textMutedColor)
+	StatusInfoStyle    = StatusMessageStyle.Copy().Foreground(secondaryColor)
+	StatusSuccessStyle = StatusMessageStyle.Copy().Foreground(successColor)
+	StatusErrorStyle   = StatusMessageStyle.Copy().Foreground(dangerColor)
 
-	SectionStyle = lipgloss.NewStyle().
-			BorderStyle(lipgloss.RoundedBorder()).
-			BorderForeground(lipgloss.Color("#874BFD")).
-			Padding(1).
-			Margin(1).
-			Width(40)
+	// Card and pane wrappers simplified (no borders/backgrounds)
+	CardStyle         = lipgloss.NewStyle().Width(56)
+	CardTitleStyle    = lipgloss.NewStyle().Bold(true)
+	CardSubtitleStyle = lipgloss.NewStyle().Foreground(textMutedColor)
+	PaneStyle         = lipgloss.NewStyle()
+	ActivePaneStyle   = PaneStyle.Copy().Bold(true)
+	InactivePaneStyle = PaneStyle.Copy()
+	PaneHeadingStyle  = lipgloss.NewStyle().Bold(true)
 
-	ActiveItemStyle = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("#FFFFFF")).
-			Background(lipgloss.Color("#7D56F4")).
-			Bold(true).
-			Padding(0, 1)
+	// Lists
+	ListItemTitleStyle         = lipgloss.NewStyle()
+	ListItemTitleSelectedStyle = lipgloss.NewStyle().Bold(true).Foreground(primaryColor)
+	ListItemMetaStyle          = lipgloss.NewStyle().Foreground(textMutedColor)
 
-	InactiveItemStyle = lipgloss.NewStyle().
-			BorderStyle(lipgloss.RoundedBorder()).
-			BorderForeground(lipgloss.Color(MutedColor.value)).
-			Padding(2)
+	// Conversation/message area
+	ConversationWrapperStyle = lipgloss.NewStyle() // width will be applied by views
+	MessageContainerStyle    = lipgloss.NewStyle().MarginBottom(1)
+	MessageBubbleStyle       = lipgloss.NewStyle() // no border/background
+	MessageBubbleSelfStyle   = MessageBubbleStyle.Copy().Foreground(primaryColor)
+	MessageAuthorStyle       = lipgloss.NewStyle().Bold(true)
+	MessageAuthorSelfStyle   = lipgloss.NewStyle().Bold(true).Foreground(primaryColor)
+	MessageTimestampStyle    = lipgloss.NewStyle().Foreground(textMutedColor)
+	MessageContentStyle      = lipgloss.NewStyle()
+	DateDividerStyle         = lipgloss.NewStyle().Foreground(textMutedColor).Align(lipgloss.Center)
 
-	HelpStyle = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("#626262")).
-			Margin(1, 2)
+	// Sidebar (members)
+	SidebarStyle               = lipgloss.NewStyle().Width(30)
+	SidebarTitleStyle          = lipgloss.NewStyle().Bold(true)
+	ParticipantLineStyle       = lipgloss.NewStyle()
+	ParticipantBadgeStyle      = lipgloss.NewStyle().Foreground(textMutedColor)
+	ParticipantBadgeOwnerStyle = ParticipantBadgeStyle.Copy().Foreground(primaryColor)
+	ParticipantBadgeAdminStyle = ParticipantBadgeStyle.Copy().Foreground(secondaryColor)
+	ParticipantBadgeYouStyle   = ParticipantBadgeStyle.Copy().Foreground(successColor)
 
-	ContainerStyle = lipgloss.NewStyle().
-			Padding(2).
-			Margin(2, 0, 2, 2)
+	// Inputs simplified: no borders/backgrounds
+	InputAreaStyle          = lipgloss.NewStyle()
+	InputFieldStyle         = lipgloss.NewStyle()
+	InputFieldFocusedStyle  = lipgloss.NewStyle().Bold(true)
+	InputPromptStyle        = lipgloss.NewStyle().Foreground(textMutedColor)
+	InputPromptFocusedStyle = lipgloss.NewStyle().Foreground(primaryColor)
+	InputTextStyle          = lipgloss.NewStyle()
+	InputTextFocusedStyle   = lipgloss.NewStyle()
+	InputPlaceholderStyle   = lipgloss.NewStyle().Foreground(textMutedColor)
 
-	SidebarStyle = lipgloss.NewStyle().
-			Width(30).
-			BorderStyle(lipgloss.NormalBorder()).
-			BorderForeground(lipgloss.Color("#7D56F4")).
-			Padding(1, 2)
+	// Buttons simplified
+	ButtonStyle        = lipgloss.NewStyle()
+	ButtonFocusedStyle = lipgloss.NewStyle().Bold(true)
 
-	ChatroomStyle = lipgloss.NewStyle().
-			Width(60).
-			BorderStyle(lipgloss.RoundedBorder()).
-			BorderForeground(lipgloss.Color("#874BFD")).
-			Padding(1, 2)
-
-	SelectedItemStyle = lipgloss.NewStyle().
-			BorderStyle(lipgloss.RoundedBorder()).
-			BorderForeground(lipgloss.Color(PrimaryColor.value)).
-			Padding(2)
-
-
-
-			MessageStyle = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("#FFFFFF")).
-			MarginBottom(1).
-			PaddingLeft(2)
-
-
-			UsernameStyle = lipgloss.NewStyle().
-			Foreground(PrimaryColor.Value()).
-			BorderStyle(lipgloss.NormalBorder()).
-			BorderForeground(PrimaryColor.Value()).
-			BorderLeft(true).
-			PaddingLeft(1)
-
-
-			OwnerStyle = lipgloss.NewStyle().
-			Foreground(LimeColor.Value()).
-			BorderStyle(lipgloss.NormalBorder()).
-			BorderForeground(LimeColor.Value()).
-			BorderLeft(true).
-			PaddingLeft(1)
-
-
-			AdminStyle = lipgloss.NewStyle().
-			Foreground(AquaColor.Value()).
-			BorderStyle(lipgloss.NormalBorder()).
-			BorderForeground(AquaColor.Value()).
-			BorderLeft(true).
-			PaddingLeft(1)
-
-
-	CommandStyle = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("#999999")).
-			MarginTop(1)
-
-	InputStyle = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("#999999")).
-			Width(40).MarginTop(1)
-
-	NavStyle = lipgloss.NewStyle().
-			Bold(true).
-			Foreground(lipgloss.Color("#FF8800")) // Orange
-
-	FocusedStyle        = lipgloss.NewStyle().Foreground(lipgloss.Color("205"))
-	BlurredStyle        = lipgloss.NewStyle().Foreground(lipgloss.Color("240"))
-	CursorStyle         = FocusedStyle
-	NoStyle             = lipgloss.NewStyle()
-	CursorModeHelpStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("244"))
-
-	FocusedButton = FocusedStyle.Render("[ Submit ]")
-	blurredButton = fmt.Sprintf("[ %s ]", BlurredStyle.Render("Submit"))
-
-	RightAlign = lipgloss.NewStyle().Align(lipgloss.Right)
-	TimestampStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("#71717a")).Italic(true)
-
-	DateSeparatorStyle = lipgloss.NewStyle().
-	Foreground(lipgloss.Color("#71717a")).
-	Align(lipgloss.Center)
-
-	PaginationStyle = lipgloss.NewStyle().
-	Foreground(lipgloss.Color("241")).
-	PaddingLeft(2)
+	CommandStyle = lipgloss.NewStyle().Foreground(textMutedColor)
 )
+
+func RenderButton(label string, focused bool) string {
+	if focused {
+		return ButtonFocusedStyle.Render(label)
+	}
+	return ButtonStyle.Render(label)
+}
+
+func RenderKeyBinding(key, description string) string {
+	return fmt.Sprintf("%s %s", KeyStyle.Render(key), HelpStyle.Render(description))
+}

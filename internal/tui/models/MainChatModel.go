@@ -3,6 +3,7 @@ package models
 import (
 	"fmt"
 	"io"
+	"strings"
 
 	"github.com/Wal-20/cli-chat-app/internal/models"
 	"github.com/Wal-20/cli-chat-app/internal/tui/client"
@@ -20,36 +21,14 @@ type chatroomItem struct {
 func (i chatroomItem) Title() string       { return i.chatroom.Title }
 func (i chatroomItem) FilterValue() string { return i.chatroom.Title }
 
-type chatroomDelegate struct {
-	styles list.DefaultItemStyles
-}
+type chatroomDelegate struct{}
 
 func NewChatroomDelegate() chatroomDelegate {
-	d := chatroomDelegate{}
-
-	// Initialize with default styles
-	d.styles = list.NewDefaultItemStyles()
-
-	// Customize the styles
-	d.styles.NormalTitle = d.styles.NormalTitle.
-		Foreground(lipgloss.Color("241")).
-		Padding(0, 0, 0, 2)
-
-	d.styles.SelectedTitle = d.styles.SelectedTitle.
-		Border(lipgloss.ThickBorder(), false, false, false, true).
-		BorderForeground(lipgloss.Color("170")).
-		Foreground(lipgloss.Color("170"))
-
-	d.styles.DimmedTitle = d.styles.DimmedTitle.
-		Foreground(lipgloss.Color("239"))
-
-	d.styles.FilterMatch = d.styles.FilterMatch.Foreground(styles.AquaColor.Value())
-
-	return d
+	return chatroomDelegate{}
 }
 
-func (d chatroomDelegate) Height() int                               { return 1 }
-func (d chatroomDelegate) Spacing() int                              { return 0 }
+func (d chatroomDelegate) Height() int                               { return 2 }
+func (d chatroomDelegate) Spacing() int                              { return 1 }
 func (d chatroomDelegate) Update(msg tea.Msg, m *list.Model) tea.Cmd { return nil }
 
 func (d chatroomDelegate) Render(w io.Writer, m list.Model, index int, listItem list.Item) {
@@ -58,29 +37,47 @@ func (d chatroomDelegate) Render(w io.Writer, m list.Model, index int, listItem 
 		return
 	}
 
-	label := item.chatroom.Title
-	if !item.isMember {
-		label += " (public)"
+	isSelected := index == m.Index()
+
+	titleStyle := styles.ListItemTitleStyle
+	if isSelected {
+		titleStyle = styles.ListItemTitleSelectedStyle
 	}
 
-	var rendered string
-	if index == m.Index() {
-		rendered = lipgloss.NewStyle().Margin(0, 0, 1, 0).Render("> " + label)
+	title := titleStyle.Render(item.chatroom.Title)
+
+	metaParts := []string{}
+	if item.isMember {
+		metaParts = append(metaParts, "joined")
+	} else if item.chatroom.IsPublic {
+		metaParts = append(metaParts, "public")
 	} else {
-		rendered = lipgloss.NewStyle().Margin(0, 0, 1, 0).Render("  " + label)
+		metaParts = append(metaParts, "private")
+	}
+	metaParts = append(metaParts, fmt.Sprintf("capacity %d", item.chatroom.MaxUserCount))
+	meta := styles.ListItemMetaStyle.Render(strings.Join(metaParts, " | "))
+
+	pointer := "  "
+	if isSelected {
+		pointer = styles.KeyStyle.Render("> ")
 	}
 
-	fmt.Fprint(w, rendered)
+	titleLine := pointer + title
+	metaLine := "    " + meta
+
+	fmt.Fprintf(w, "%s\n%s", titleLine, metaLine)
 }
 
 type MainChatModel struct {
-	apiClient         *client.APIClient
-	username          string
-	userChatrooms     list.Model
-	publicChatrooms   list.Model
-	activeListPointer int
-	width             int
-	height            int
+	apiClient       *client.APIClient
+	username        string
+	userChatrooms   list.Model
+	publicChatrooms list.Model
+	activeList      int
+	width           int
+	height          int
+	flashMessage    string
+	flashStyle      lipgloss.Style
 }
 
 func NewMainChatModel(username string, apiClient *client.APIClient) MainChatModel {
@@ -97,6 +94,7 @@ func NewMainChatModel(username string, apiClient *client.APIClient) MainChatMode
 	for i, c := range userChatroomsData {
 		userItems[i] = chatroomItem{chatroom: c, isMember: true}
 	}
+
 	publicItems := make([]list.Item, len(publicChatroomsData))
 	for i, c := range publicChatroomsData {
 		publicItems[i] = chatroomItem{chatroom: c, isMember: false}
@@ -104,29 +102,29 @@ func NewMainChatModel(username string, apiClient *client.APIClient) MainChatMode
 
 	delegate := NewChatroomDelegate()
 
-	// Initialize lists with proper height
-	userList := list.New(userItems, delegate, 20, 10) // Set initial size
-	userList.Title = "Your Chatrooms"
+	userList := list.New(userItems, delegate, 40, 12)
 	userList.SetShowHelp(false)
+	userList.SetShowTitle(false)
+	userList.SetShowStatusBar(false)
+	userList.SetShowPagination(false)
 	userList.SetFilteringEnabled(true)
-	userList.Styles.Title = styles.TitleStyle // Add custom styling
-	userList.DisableQuitKeybindings()         // Disable default quit
-	userList.SetShowPagination(true)
+	userList.DisableQuitKeybindings()
 
-	publicList := list.New(publicItems, delegate, 20, 10)
-	publicList.Title = "Public Chatrooms"
+	publicList := list.New(publicItems, delegate, 40, 12)
 	publicList.SetShowHelp(false)
+	publicList.SetShowTitle(false)
+	publicList.SetShowStatusBar(false)
+	publicList.SetShowPagination(false)
 	publicList.SetFilteringEnabled(true)
-	publicList.Styles.Title = styles.TitleStyle
 	publicList.DisableQuitKeybindings()
-	publicList.SetShowPagination(true)
 
 	return MainChatModel{
-		apiClient:         apiClient,
-		username:          username,
-		userChatrooms:     userList,
-		publicChatrooms:   publicList,
-		activeListPointer: 0,
+		apiClient:       apiClient,
+		username:        username,
+		userChatrooms:   userList,
+		publicChatrooms: publicList,
+		activeList:      0,
+		flashStyle:      styles.StatusInfoStyle,
 	}
 }
 
@@ -135,44 +133,44 @@ func (m MainChatModel) Init() tea.Cmd {
 }
 
 func (m MainChatModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
-	var cmd tea.Cmd
+	var cmds []tea.Cmd
 
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
 		m.height = msg.Height
 
-		listWidth := m.width - 8
-		listHeight := m.height - 6
-
-		if listWidth < 0 {
-			listWidth = 0
-		}
-		if listHeight < 3 {
-			listHeight = 3
+		paneWidth := m.paneWidth()
+		listWidth := paneWidth - 4
+		if listWidth < 16 {
+			listWidth = 16
 		}
 
-		if m.activeListPointer == 0 {
-			m.userChatrooms.SetSize(listWidth, listHeight)
-		} else {
-			m.publicChatrooms.SetSize(listWidth, listHeight)
+		listHeight := msg.Height - 10
+		if listHeight < 8 {
+			listHeight = 8
 		}
+
+		m.userChatrooms.SetSize(listWidth, listHeight)
+		m.publicChatrooms.SetSize(listWidth, listHeight)
 
 		return m, nil
 
 	case tea.KeyMsg:
 		switch msg.String() {
 		case "tab":
-			m.activeListPointer = (m.activeListPointer + 1) % 2
+			m.activeList = (m.activeList + 1) % 2
+			return m, nil
 		case "enter":
-			if m.activeListPointer == 0 {
+			if m.activeList == 0 {
 				if item, ok := m.userChatrooms.SelectedItem().(chatroomItem); ok {
 					return NewChatroomModel(m.username, item.chatroom, m.apiClient), nil
 				}
 			} else {
 				if item, ok := m.publicChatrooms.SelectedItem().(chatroomItem); ok {
-					err := m.apiClient.JoinChatroom(item.chatroom.Id)
-					if err != nil {
+					if err := m.apiClient.JoinChatroom(item.chatroom.Id); err != nil {
+						m.flashMessage = fmt.Sprintf("Could not join %s: %s", item.chatroom.Title, err.Error())
+						m.flashStyle = styles.StatusErrorStyle
 						return m, nil
 					}
 					return NewChatroomModel(m.username, item.chatroom, m.apiClient), nil
@@ -181,39 +179,102 @@ func (m MainChatModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "q", "ctrl+c":
 			return m, tea.Quit
 		case "L":
-			err := m.apiClient.Logout()
-			if err != nil {
+			if err := m.apiClient.Logout(); err != nil {
+				m.flashMessage = fmt.Sprintf("Logout failed: %s", err.Error())
+				m.flashStyle = styles.StatusErrorStyle
 				return m, nil
 			}
 			return NewLoginModel(m.apiClient), nil
 		}
 	}
 
-	if m.activeListPointer == 0 {
+	if m.activeList == 0 {
+		var cmd tea.Cmd
 		m.userChatrooms, cmd = m.userChatrooms.Update(msg)
+		cmds = append(cmds, cmd)
 	} else {
+		var cmd tea.Cmd
 		m.publicChatrooms, cmd = m.publicChatrooms.Update(msg)
+		cmds = append(cmds, cmd)
 	}
 
-	return m, cmd
+	return m, tea.Batch(cmds...)
 }
 
 func (m MainChatModel) View() string {
-	header := styles.TitleStyle.Render(fmt.Sprintf("Welcome %s!", m.username)) + "\n"
-	helpText := styles.CommandStyle.Render("[Tab] Switch lists • [Enter] Join/View • [q] Quit • [L] Log Out") + "\n"
+	header := styles.TitleStyle.Render(fmt.Sprintf("Welcome, %s", m.username))
+	subtitle := styles.SubtitleStyle.Render("Use Tab to switch panes, Enter to dive into a room.")
 
-	var listView string
-	if m.activeListPointer == 0 {
-		listView = m.userChatrooms.View()
-	} else {
-		listView = m.publicChatrooms.View()
+	paneWidth := m.paneWidth()
+	leftPane := renderPane("Your chatrooms", m.userChatrooms, m.activeList == 0, paneWidth, true)
+	rightPane := renderPane("Discover", m.publicChatrooms, m.activeList == 1, paneWidth, false)
+	columns := lipgloss.JoinHorizontal(lipgloss.Top, leftPane, rightPane)
+
+	joinedCount := len(m.userChatrooms.VisibleItems())
+	discoverCount := len(m.publicChatrooms.VisibleItems())
+	info := fmt.Sprintf("%d joined | %d discoverable", joinedCount, discoverCount)
+	statusStyle := styles.StatusInfoStyle
+	if m.flashMessage != "" {
+		info = m.flashMessage
+		statusStyle = m.flashStyle
 	}
 
-	listView = styles.ContainerStyle.Render(listView)
+	helpItems := []string{
+		styles.RenderKeyBinding("Tab", "Switch pane"),
+		styles.RenderKeyBinding("Enter", "Open or join"),
+		styles.RenderKeyBinding("L", "Log out"),
+		styles.RenderKeyBinding("Q", "Quit"),
+	}
+	help := strings.Join(helpItems, styles.HelpStyle.Render("  "))
 
-	renderStyle := styles.ContainerStyle.MaxWidth(m.width).MaxHeight(m.height).
-		Width(m.width).
-		Height(m.height).Padding(0).Margin(0)
+	footerContent := statusStyle.Render(info) + "\n" + styles.HelpStyle.Render(help)
+	footer := styles.StatusBarStyle.Render(footerContent)
 
-	return renderStyle.Render(lipgloss.JoinVertical(lipgloss.Left, header, helpText, listView))
+	layout := lipgloss.JoinVertical(
+		lipgloss.Left,
+		header,
+		subtitle,
+		"",
+		columns,
+		"",
+		footer,
+	)
+
+	if m.width > 0 && m.height > 0 {
+		app := styles.AppStyle.Copy().Width(m.width).Height(m.height)
+		return app.Render(layout)
+	}
+
+	return styles.AppStyle.Render(layout)
+}
+
+func (m MainChatModel) paneWidth() int {
+	if m.width <= 0 {
+		return 48
+	}
+	paneWidth := (m.width - 8) / 2
+	if paneWidth < 28 {
+		paneWidth = 28
+	}
+	return paneWidth
+}
+
+func renderPane(title string, lst list.Model, active bool, width int, addMargin bool) string {
+	header := styles.PaneHeadingStyle.Render(title)
+	body := lipgloss.JoinVertical(lipgloss.Left, header, lst.View())
+
+	paneStyle := styles.InactivePaneStyle
+	if active {
+		paneStyle = styles.ActivePaneStyle
+	}
+
+	if width > 0 {
+		paneStyle = paneStyle.Copy().Width(width)
+	}
+
+	if addMargin {
+		paneStyle = paneStyle.Copy().MarginRight(2)
+	}
+
+	return paneStyle.Render(body)
 }
