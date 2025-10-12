@@ -8,7 +8,6 @@ import (
     "github.com/Wal-20/cli-chat-app/internal/config"
     "github.com/Wal-20/cli-chat-app/internal/models"
     "gorm.io/gorm"
-    apiws "github.com/Wal-20/cli-chat-app/internal/api/ws"
 )
 
 func SendMessage(w http.ResponseWriter, r *http.Request) {
@@ -33,9 +32,7 @@ func SendMessage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var requestBody struct {
-		Content string `json:"content"`
-	}
+    var requestBody struct { Content string `json:"content"` }
 
 	if err := decoder.Decode(&requestBody); err != nil {
 		http.Error(w, "Unable to decode request body", http.StatusInternalServerError)
@@ -48,46 +45,16 @@ func SendMessage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	chatroomIdUint := uint(chatroomID)
-	message := models.Message{
-		UserId:  senderID,
-		Content: requestBody.Content,
-		ChatroomID: chatroomIdUint,
-	}
-
-	var user models.User
-	if err := config.DB.First(&user, message.UserId).Error; err != nil {
-		http.Error(w, "Unable to retrieve user information", http.StatusInternalServerError)
-		return
-	}
-
-    result := config.DB.Create(&message)
-
-    if result.Error != nil {
+    chatroomIdUint := uint(chatroomID)
+    msg, sender, err := Svcs.Message.SendMessage(senderID, chatroomIdUint, requestBody.Content)
+    if err != nil {
         http.Error(w, "Unable to create messsage", http.StatusInternalServerError)
         return
     }
-
-    // Broadcast to websocket subscribers in this chatroom
-    msgWithUser := models.MessageWithUser{
-        Content:   message.Content,
-        CreatedAt: message.CreatedAt,
-        Username:  user.Name,
-    }
-    // Avoid circular import by keeping broadcaster in ws package
-    // and only passing MessageWithUser payloads
-    // NOTE: best-effort; failure to broadcast shouldn't fail the request
-    go func(roomID uint, payload models.MessageWithUser) {
-        defer func() { recover() }()
-        // Import is at top-level
-        // Broadcast inside goroutine to not block HTTP response
-        wsBroadcast(roomID, payload)
-    }(message.ChatroomID, msgWithUser)
-
     encoder.Encode(map[string]interface{}{
         "Status":  "success",
-        "Message": message,
-        "Sender":  user.Name,
+        "Message": msg,
+        "Sender":  sender,
     })
 }
 
@@ -144,7 +111,4 @@ func UpdateMessage(w http.ResponseWriter, r *http.Request) {
     })
 }
 
-// wsBroadcast is a tiny indirection to the ws package for broadcasting.
-func wsBroadcast(roomID uint, payload models.MessageWithUser) {
-    apiws.BroadcastMessage(roomID, payload)
-}
+// wsBroadcast removed: broadcasting handled in MessageService

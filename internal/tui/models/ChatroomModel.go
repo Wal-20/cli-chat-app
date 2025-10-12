@@ -12,6 +12,7 @@ import (
 	"github.com/Wal-20/cli-chat-app/internal/tui/client"
 	"github.com/Wal-20/cli-chat-app/internal/tui/styles"
 	"github.com/charmbracelet/bubbles/textarea"
+	"github.com/charmbracelet/bubbles/textinput"
 	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
@@ -25,6 +26,7 @@ type sendMessageResultMsg struct {
 type ChatroomModel struct {
     apiClient          *client.APIClient
     username           string
+    userID             uint
     chatroom           models.Chatroom
     messages           []models.MessageWithUser
     users              []models.UserChatroom
@@ -40,9 +42,12 @@ type ChatroomModel struct {
     flashStyle         lipgloss.Style
     wsChan             <-chan models.MessageWithUser
     wsCancel           func()
+    // invite
+    inviting           bool
+    inviteInput        textinput.Model
 }
 
-func NewChatroomModel(username string, chatroom models.Chatroom, apiClient *client.APIClient) ChatroomModel {
+func NewChatroomModel(username string, userID uint, chatroom models.Chatroom, apiClient *client.APIClient) ChatroomModel {
 	input := textarea.New()
 	input.Placeholder = "Write a message..."
 	input.Prompt = ""
@@ -78,9 +83,13 @@ func NewChatroomModel(username string, chatroom models.Chatroom, apiClient *clie
 	vp.Style = styles.ConversationWrapperStyle
 	vp.MouseWheelEnabled = true
 
+    inv := textinput.New()
+    inv.Prompt = "Invite (id or name): "
+    inv.Placeholder = "e.g., 42 or alice"
     model := ChatroomModel{
         apiClient:    apiClient,
         username:     username,
+        userID:       userID,
         chatroom:     chatroom,
         messages:     messages,
         users:        users,
@@ -89,6 +98,7 @@ func NewChatroomModel(username string, chatroom models.Chatroom, apiClient *clie
         sidebarWidth: styles.SidebarStyle.GetWidth(),
         showSidebar:  true,
         flashStyle:   styles.StatusInfoStyle,
+        inviteInput:  inv,
     }
 
     // Attempt to subscribe to websocket updates for this room
@@ -112,33 +122,65 @@ func (m ChatroomModel) Init() tea.Cmd {
 }
 
 func (m ChatroomModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
-	switch msg := msg.(type) {
-	case tea.WindowSizeMsg:
-		m.applyWindowSize(msg.Width, msg.Height)
-		m.refreshViewportContent(true)
-		return m, nil
+    switch msg := msg.(type) {
+    case tea.WindowSizeMsg:
+        m.applyWindowSize(msg.Width, msg.Height)
+        m.refreshViewportContent(true)
+        return m, nil
 
-	case tea.KeyMsg:
-		switch msg.String() {
+    case tea.KeyMsg:
+        switch msg.String() {
+		case "ctrl+c":
+			return m, tea.Quit
         case "esc":
+            if m.inviting {
+                m.inviting = false
+                m.inviteInput.Blur()
+                return m, nil
+            }
             if m.wsCancel != nil { m.wsCancel() }
-            return NewMainChatModel(m.username, m.apiClient), nil
-		case "ctrl+u":
-			m.viewport.HalfViewUp()
-			return m, nil
-		case "ctrl+d":
-			m.viewport.HalfViewDown()
-			return m, nil
-		case "enter":
-			if m.sending {
-				return m, nil
-			}
-			content := strings.TrimSpace(m.input.Value())
-			if content == "" {
-				m.flashMessage = "Nothing to send yet."
-				m.flashStyle = styles.StatusErrorStyle
-				return m, nil
-			}
+            // Ensure next main screen pulls fresh memberships
+            m.apiClient.InvalidateUserChatrooms()
+            return NewMainChatModel(m.username, m.userID, m.apiClient), nil
+        case "ctrl+u":
+            m.viewport.HalfViewUp()
+            return m, nil
+        case "ctrl+d":
+            m.viewport.HalfViewDown()
+            return m, nil
+        case "ctrl+i":
+            if !m.inviting {
+                if !m.currentUserIsAdmin() {
+                    m.flashMessage = "Only admins can invite users"
+                    m.flashStyle = styles.StatusErrorStyle
+                    return m, nil
+                }
+                m.inviting = true
+                m.inviteInput.SetValue("")
+                m.inviteInput.Focus()
+                m.flashMessage = ""
+                return m, nil
+            }
+        case "enter":
+            if m.inviting {
+                ident := strings.TrimSpace(m.inviteInput.Value())
+                if ident == "" {
+                    m.flashMessage = "Enter user id or username"
+                    m.flashStyle = styles.StatusErrorStyle
+                    return m, nil
+                }
+                m.inviting = false
+                return m, inviteUserCmd(m.apiClient, m.chatroom.Id, ident)
+            }
+            if m.sending {
+                return m, nil
+            }
+            content := strings.TrimSpace(m.input.Value())
+            if content == "" {
+                m.flashMessage = "Nothing to send yet."
+                m.flashStyle = styles.StatusErrorStyle
+                return m, nil
+            }
 
 			m.sending = true
 			m.input.Reset()
@@ -196,11 +238,17 @@ func (m ChatroomModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, tea.Batch(cmds...)
 	}
 
-	var inputCmd tea.Cmd
-	m.input, inputCmd = m.input.Update(msg)
-	cmds = append(cmds, inputCmd)
+    if m.inviting {
+        var ic tea.Cmd
+        m.inviteInput, ic = m.inviteInput.Update(msg)
+        cmds = append(cmds, ic)
+    } else {
+        var inputCmd tea.Cmd
+        m.input, inputCmd = m.input.Update(msg)
+        cmds = append(cmds, inputCmd)
+    }
 
-	return m, tea.Batch(cmds...)
+    return m, tea.Batch(cmds...)
 }
 
 // tea message types for websocket events
@@ -247,7 +295,11 @@ func (m ChatroomModel) View() string {
 			inputWidth = 80
 		}
 	}
-	inputView := styles.InputAreaStyle.Copy().Width(inputWidth).Render(m.input.View())
+    inputView := styles.InputAreaStyle.Copy().Width(inputWidth).Render(m.input.View())
+    if m.inviting {
+        inviteView := styles.InputFieldFocusedStyle.Render(m.inviteInput.View())
+        inputView = inviteView + "\n" + inputView
+    }
 
 	info := fmt.Sprintf("%d messages | %d participants", len(m.messages), len(m.users))
 	statusStyle := styles.StatusInfoStyle
@@ -260,12 +312,14 @@ func (m ChatroomModel) View() string {
 		styles.RenderKeyBinding("Esc", "Back"),
 		styles.RenderKeyBinding("Enter", "Send"),
 		styles.RenderKeyBinding("Shift+Enter", "New line"),
+		styles.RenderKeyBinding("Ctrl+i", "Invite User"),
+		styles.RenderKeyBinding("Ctrl+c", "Quit"),
 		styles.RenderKeyBinding("Ctrl+U/Ctrl+D", "Scroll"),
 	}
 	help := strings.Join(helpItems, styles.HelpStyle.Render("  "))
 
-	footerContent := statusStyle.Render(info) + "\n" + styles.HelpStyle.Render(help)
-	footer := styles.StatusBarStyle.Render(footerContent)
+    footerContent := statusStyle.Render(info) + "\n" + styles.HelpStyle.Render(help)
+    footer := styles.StatusBarStyle.Render(footerContent)
 
 	layout := lipgloss.JoinVertical(
 		lipgloss.Left,
@@ -445,6 +499,15 @@ func (m *ChatroomModel) ensureParticipant(username string) {
 	m.users = append(m.users, models.UserChatroom{Name: username})
 }
 
+func (m ChatroomModel) currentUserIsAdmin() bool {
+    for _, u := range m.users {
+        if u.UserID == m.userID {
+            return u.IsAdmin || u.IsOwner
+        }
+    }
+    return false
+}
+
 func sendMessage(apiClient *client.APIClient, chatroomID uint, username, content string) tea.Cmd {
 	return func() tea.Msg {
 		result, err := apiClient.SendMessage(strconv.FormatUint(uint64(chatroomID), 10), content)
@@ -471,6 +534,18 @@ func sendMessage(apiClient *client.APIClient, chatroomID uint, username, content
 
 		return sendMessageResultMsg{message: message}
 	}
+}
+
+// invite user by id or username
+func inviteUserCmd(apiClient *client.APIClient, chatroomID uint, ident string) tea.Cmd {
+    return func() tea.Msg {
+        err := apiClient.InviteUser(strconv.FormatUint(uint64(chatroomID), 10), ident)
+        // Reuse flash mechanism via sendMessageResultMsg with err only
+        if err != nil {
+            return sendMessageResultMsg{err: fmt.Errorf("invite failed: %w", err)}
+        }
+        return sendMessageResultMsg{message: models.MessageWithUser{Content: "", Username: ""}}
+    }
 }
 
 func getUserRole(users []models.UserChatroom, username string, currentUsername string) string {

@@ -1,15 +1,16 @@
 package models
 
 import (
-	"fmt"
-	"strings"
+    "fmt"
+    "strings"
 
-	"github.com/Wal-20/cli-chat-app/internal/tui/client"
-	"github.com/Wal-20/cli-chat-app/internal/tui/styles"
-	"github.com/charmbracelet/bubbles/cursor"
-	"github.com/charmbracelet/bubbles/textinput"
-	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
+    "github.com/Wal-20/cli-chat-app/internal/tui/client"
+    "github.com/Wal-20/cli-chat-app/internal/tui/styles"
+    "github.com/Wal-20/cli-chat-app/internal/utils"
+    "github.com/charmbracelet/bubbles/cursor"
+    "github.com/charmbracelet/bubbles/textinput"
+    tea "github.com/charmbracelet/bubbletea"
+    "github.com/charmbracelet/lipgloss"
 )
 
 type LoginModel struct {
@@ -27,6 +28,7 @@ type LoginModel struct {
 type loginResultMsg struct {
 	username string
 	token    string
+	userID   uint
 	err      error
 }
 
@@ -152,8 +154,8 @@ func (m LoginModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, m.applyFocusStyles()
 		}
 
-		m.apiClient.SetToken(msg.token)
-		return NewMainChatModel(msg.username, m.apiClient), nil
+        m.apiClient.SetToken(msg.token)
+		return NewMainChatModel(msg.username, msg.userID, m.apiClient), nil
 	}
 
 	cmds := make([]tea.Cmd, len(m.inputs))
@@ -212,7 +214,7 @@ func (m LoginModel) View() string {
 		styles.RenderKeyBinding("Shift+Tab", "Previous"),
 		styles.RenderKeyBinding("Enter", "Submit"),
 		styles.RenderKeyBinding("Ctrl+R", fmt.Sprintf("Cursor: %s", m.cursorMode.String())),
-		styles.RenderKeyBinding("Ctrl+C", "Quit"),
+		styles.RenderKeyBinding("q", "Quit"),
 	}
 	help := strings.Join(helpItems, styles.HelpStyle.Render("  "))
 
@@ -247,17 +249,32 @@ func (m LoginModel) View() string {
 }
 
 func login(apiClient *client.APIClient, username, password string) tea.Cmd {
-	return func() tea.Msg {
-		res, err := apiClient.LoginOrRegister(username, password)
-		if err != nil {
-			return loginResultMsg{err: err}
-		}
+    return func() tea.Msg {
+        res, err := apiClient.LoginOrRegister(username, password)
+        if err != nil {
+            return loginResultMsg{err: err}
+        }
 
-		token, ok := res["AccessToken"].(string)
-		if !ok || token == "" {
-			return loginResultMsg{err: fmt.Errorf("authentication failed: missing access token")}
-		}
+        token, ok := res["AccessToken"].(string)
+        if !ok || token == "" {
+            return loginResultMsg{err: fmt.Errorf("authentication failed: missing access token")}
+        }
 
-		return loginResultMsg{username: username, token: token}
-	}
+        // Persist token pair locally and hydrate client for future requests
+        refresh, _ := res["RefreshToken"].(string)
+        _ = utils.SaveTokenPair(utils.TokenPair{AccessToken: token, RefreshToken: refresh})
+        apiClient.SetTokenPair(token, refresh)
+        // Extract user ID from access token claims
+        var uid uint
+        if claims, err2 := utils.GetClaimsFromToken(token); err2 == nil {
+            if idf, ok := claims["userID"].(float64); ok {
+                uid = uint(idf)
+            }
+        }
+        return loginResultMsg{username: username, token: token, userID: uid}
+    }
 }
+
+
+
+

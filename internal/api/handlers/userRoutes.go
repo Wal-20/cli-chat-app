@@ -1,18 +1,17 @@
 package handlers
 
 import (
-	"encoding/json"
-	"errors"
-	"fmt"
-	"log"
-	"net/http"
-	"strconv"
-	"time"
-	"github.com/Wal-20/cli-chat-app/internal/config"
-	"github.com/Wal-20/cli-chat-app/internal/models"
-	"github.com/Wal-20/cli-chat-app/internal/utils"
-	"github.com/gin-gonic/gin"
-	"gorm.io/gorm"
+    "encoding/json"
+    "errors"
+    "fmt"
+    "net/http"
+    "strings"
+    "strconv"
+    "time"
+    "github.com/Wal-20/cli-chat-app/internal/config"
+    "github.com/Wal-20/cli-chat-app/internal/models"
+    "github.com/Wal-20/cli-chat-app/internal/utils"
+    "gorm.io/gorm"
 )
 
 
@@ -25,7 +24,7 @@ func GetUsers(w http.ResponseWriter, r *http.Request) {
 		if err != nil || id <= 0 {
 
 			w.WriteHeader(http.StatusBadRequest)
-			encoder.Encode(gin.H{"Status": "invalid ID"})
+			encoder.Encode(map[string]any{"Status": "invalid ID"})
 			return
 		}
 
@@ -34,12 +33,12 @@ func GetUsers(w http.ResponseWriter, r *http.Request) {
 		if result.Error != nil {
 
 			w.WriteHeader(http.StatusNotFound)
-			encoder.Encode(gin.H{"Status": "User not found"})
+			encoder.Encode(map[string]any{"Status": "User not found"})
 			return
 		}
 
 		w.WriteHeader(http.StatusOK)
-		encoder.Encode(gin.H{
+		encoder.Encode(map[string]any{
 			"User": user,
 		})
 
@@ -48,11 +47,11 @@ func GetUsers(w http.ResponseWriter, r *http.Request) {
 		result := config.DB.Find(&users)
 
 		if result.Error != nil {
-			encoder.Encode(gin.H{"Message": "Failed to retrieve users"})
+			encoder.Encode(map[string]any{"Message": "Failed to retrieve users"})
 			return
 		}
 
-		encoder.Encode(gin.H{"Users": users})
+		encoder.Encode(map[string]any{"Users": users})
 
 	}
 }
@@ -78,236 +77,163 @@ func GetChatroomsByUser(w http.ResponseWriter, r *http.Request) {
 }
 
 func Login(w http.ResponseWriter, r *http.Request) {
-	var user models.User
-	decoder := json.NewDecoder(r.Body)
-	encoder := json.NewEncoder(w)
+    var body models.User
+    decoder := json.NewDecoder(r.Body)
+    encoder := json.NewEncoder(w)
 
-	// Decode the request body into the user struct
-	if err := decoder.Decode(&user); err != nil {
-		http.Error(w, "Invalid JSON", http.StatusBadRequest)
-		return
-	}
+    if err := decoder.Decode(&body); err != nil {
+        http.Error(w, "Invalid JSON", http.StatusBadRequest)
+        return
+    }
 
-	// Validate user inputs
-	if user.Name == "" || user.Password == "" {
-		http.Error(w, "Invalid User", http.StatusBadRequest)
-		return
-	}
+    // Validate user inputs
+    if body.Name == "" || body.Password == "" {
+        http.Error(w, "Invalid User", http.StatusBadRequest)
+        return
+    }
 
 	defer r.Body.Close()
 
-	// Fetch the user from the database
-	var userDB models.User
-	result := config.DB.Where("name = ?", user.Name).First(&userDB)
-
-	if result.Error != nil {
-		if errors.Is(result.Error, gorm.ErrRecordNotFound) {
-			http.Error(w, "User not found", http.StatusNotFound)
-		} else {
-			http.Error(w, "Database error", http.StatusInternalServerError)
-		}
-		return
-	}
-
-	// Check the password hash
-	if !utils.CheckPasswordHash(user.Password, userDB.Password) {
-		http.Error(w, "Invalid password", http.StatusUnauthorized)
-		return
-	}
-
-	// Load token pair from storage
-	tokenPair, err := utils.LoadTokenPair()
-	if err == nil && tokenPair.AccessToken != "" {
-
-		claims, err := utils.ValidateJWTToken(tokenPair.AccessToken)
-		if err == nil && claims["userID"] == userDB.ID {
-			// Check if the token belongs to the current user
-			encoder.Encode(map[string] any {
-				"Status":      "user already logged in",
-				"AccessToken": tokenPair.AccessToken,
-			})
-			return
-		} else if err != nil {
-			tokenPair.AccessToken = ""
-			tokenPair.RefreshToken = ""
-		}
-	}
-
-	accessToken, err := utils.GenerateJWTToken(userDB.ID, userDB.Name)
-	if err != nil {
-		http.Error(w, "Error generating token", http.StatusInternalServerError)
-		return
-	}
-
-	var refreshToken string
-
-	if tokenPair.RefreshToken == "" {
-		refreshToken, err := utils.GenerateRefreshToken(userDB.ID, userDB.Name )
-		if err != nil {
-			http.Error(w, "Error generating refresh token", http.StatusInternalServerError)
-			return
-		}
-		tokenPair.RefreshToken = refreshToken
-	}
-
-	tokenPair = utils.TokenPair{
-		AccessToken:  accessToken,
-		RefreshToken: tokenPair.RefreshToken,
-	}
-	if err := utils.SaveTokenPair(tokenPair); err != nil {
-		http.Error(w, "Error saving credentials", http.StatusInternalServerError)
-		return
-	}
-
-	now := time.Now()
-	userDB.LastLogin = &now
-	if err := config.DB.Save(&userDB).Error; err != nil {
-		log.Printf("Failed to update LastLogin: %v", err)
-		http.Error(w, "Failed to update LastLogin", http.StatusInternalServerError)
-		return
-	}
+    accessToken, refreshToken, _, err := Svcs.Auth.Login(body.Name, body.Password)
+    if err != nil {
+        if errors.Is(err, gorm.ErrRecordNotFound) {
+            http.Error(w, "User not found", http.StatusNotFound)
+            return
+        }
+        if err.Error() == "invalid password" {
+            http.Error(w, "Invalid password", http.StatusUnauthorized)
+            return
+        }
+        http.Error(w, "Authentication failed", http.StatusUnauthorized)
+        return
+    }
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
-	encoder.Encode(map[string]interface{}{
-		"Status":       "success",
-		"AccessToken":        accessToken,
-		"RefreshToken": refreshToken,
-	})
+    encoder.Encode(map[string]interface{}{
+        "Status":       "success",
+        "AccessToken":  accessToken,
+        "RefreshToken": refreshToken,
+    })
 }
 
 
 func LogOut(w http.ResponseWriter, r *http.Request) {
-	
-	tokenPair, err := utils.LoadTokenPair()
-	if err != nil {
-		http.Error(w, "Error loading token pair", http.StatusInternalServerError)
-		return
-	}
-
-	tokenPair.AccessToken = ""
-	tokenPair.RefreshToken = ""
-
-	utils.AuthCache.Delete(tokenPair.AccessToken)
-	utils.AuthCache.Delete(tokenPair.RefreshToken)
-
-	if err := utils.SaveTokenPair(tokenPair); err != nil {
-		http.Error(w, "Error saving token pair", http.StatusInternalServerError)
-		return
-	}
-
-	encoder := json.NewEncoder(w)
-
-	encoder.Encode(map[string]interface{}{
-		"Status": "Logged out succcessfully",
-	})
+    // Stateless: instruct the client to clear its local tokens; drop cached claims if present.
+    authHeader := r.Header.Get("Authorization")
+    if strings.HasPrefix(authHeader, "Bearer ") {
+        utils.AuthCache.Delete(strings.TrimPrefix(authHeader, "Bearer "))
+    }
+    json.NewEncoder(w).Encode(map[string]interface{}{
+        "Status": "Logged out successfully",
+    })
 }
 
 func DeleteUser(w http.ResponseWriter, r *http.Request) {
-
-	tokenPair, err := utils.LoadTokenPair()
-	if err != nil {
-		http.Error(w, "Error loading token pair", http.StatusInternalServerError)
-		return
-	}
-
-	tokenPair.AccessToken = ""
-	tokenPair.RefreshToken = ""
-
-	if err := utils.SaveTokenPair(tokenPair); err != nil {
-		http.Error(w, "Error saving token pair", http.StatusInternalServerError)
-		return
-	}
-
-	userID := r.Context().Value("userId")
-
-	if err := config.DB.Delete(&models.User{}, userID).Error; err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			http.Error(w, "User not found", http.StatusNotFound)
-		} else {
-			http.Error(w, "Error fetching user", http.StatusInternalServerError)
-		}
-		return
-	}
-
-	encoder := json.NewEncoder(w)
-
-	encoder.Encode(map[string]interface{}{
-		"Status": "User Deleted successfully",
-	})
-
+    userID, ok := r.Context().Value("userID").(uint)
+    if !ok || userID == 0 {
+        http.Error(w, "Unauthorized", http.StatusUnauthorized)
+        return
+    }
+    if err := config.DB.Delete(&models.User{}, userID).Error; err != nil {
+        if errors.Is(err, gorm.ErrRecordNotFound) {
+            http.Error(w, "User not found", http.StatusNotFound)
+        } else {
+            http.Error(w, "Error fetching user", http.StatusInternalServerError)
+        }
+        return
+    }
+    json.NewEncoder(w).Encode(map[string]interface{}{
+        "Status": "User Deleted successfully",
+    })
 }
 
 
 func CreateUser(w http.ResponseWriter, r *http.Request) {
-	var user models.User
+    var body models.User
 
-	decoder := json.NewDecoder(r.Body)
-	encoder := json.NewEncoder(w)
+    decoder := json.NewDecoder(r.Body)
+    encoder := json.NewEncoder(w)
 
-	if err := decoder.Decode(&user); err != nil {
-		http.Error(w, "Invalid JSON", http.StatusBadRequest)
-		return
-	}
+    if err := decoder.Decode(&body); err != nil {
+        http.Error(w, "Invalid JSON", http.StatusBadRequest)
+        return
+    }
 
 	defer r.Body.Close()
 
-	if user.Name == "" || user.Password == "" {
-		http.Error(w, "Invalid User", http.StatusBadRequest)
-		return
-	}
+    if body.Name == "" || body.Password == "" {
+        http.Error(w, "Invalid User", http.StatusBadRequest)
+        return
+    }
+    accessToken, refreshToken, user, err := Svcs.Auth.Register(body.Name, body.Password)
+    if err != nil {
+        http.Error(w, "Error creating user", http.StatusBadRequest)
+        return
+    }
 
-	hashedPassword, err := utils.HashPassword(user.Password)
-	if err != nil {
-		http.Error(w, "Error hashing password", http.StatusBadRequest)
-		return
-	}
+    w.Header().Set("Content-Type", "application/json")
+    w.WriteHeader(http.StatusOK)
+    encoder.Encode(map[string]interface{}{
+        "Status": "User created successfully",
+        "User":   user,
+        "AccessToken": accessToken,
+        "RefreshToken": refreshToken,
+    })
 
-	user.Password = hashedPassword
+}
 
-	now := time.Now()
-	user.LastLogin = &now
+// RefreshToken accepts a refresh token and returns a new access/refresh token pair.
+func RefreshToken(w http.ResponseWriter, r *http.Request) {
+    var body map[string]string
+    if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+        http.Error(w, "Invalid JSON", http.StatusBadRequest)
+        return
+    }
+    defer r.Body.Close()
+    refresh := body["refreshToken"]
+    if refresh == "" {
+        refresh = body["RefreshToken"]
+    }
+    if refresh == "" {
+        refresh = body["refresh_token"]
+    }
+    if refresh == "" {
+        http.Error(w, "Missing refresh token", http.StatusBadRequest)
+        return
+    }
 
-	result := config.DB.Create(&user)
+    claims, err := utils.ValidateJWTToken(refresh)
+    if err != nil {
+        http.Error(w, "Invalid refresh token", http.StatusUnauthorized)
+        return
+    }
+    userIDFloat, ok := claims["userID"].(float64)
+    if !ok {
+        http.Error(w, "Invalid token claims", http.StatusUnauthorized)
+        return
+    }
+    username, ok := claims["username"].(string)
+    if !ok || username == "" {
+        http.Error(w, "Invalid token claims", http.StatusUnauthorized)
+        return
+    }
 
-	if result.Error != nil {
-		http.Error(w, "Error creating user", http.StatusBadRequest)
-		return
-	}
-
-	// Generate both access and refresh tokens
-	accessToken, err := utils.GenerateJWTToken(user.ID, user.Name)
-	if err != nil {
-		http.Error(w, "Error generating token", http.StatusInternalServerError)
-		return
-	}
-
-	refreshToken, err := utils.GenerateRefreshToken(user.ID, user.Name)
-	if err != nil {
-		http.Error(w, "Error generating refresh token", http.StatusInternalServerError)
-		return
-	}
-
-	// Save tokens to local tokenPair
-	tokenPair := utils.TokenPair{
-		AccessToken:  accessToken,
-		RefreshToken: refreshToken,
-	}
-	if err := utils.SaveTokenPair(tokenPair); err != nil {
-		http.Error(w, "Error saving credentials", http.StatusInternalServerError)
-		return
-	}
-
-	// Respond back with the user data
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusOK)
-	encoder.Encode(map[string]interface{}{
-		"Status": "User created successfully",
-		"User":   user,
-		"AccessToken": accessToken,
-		"RefreshToken": refreshToken,
-	})
-
+    newAccess, err := utils.GenerateJWTToken(uint(userIDFloat), username)
+    if err != nil {
+        http.Error(w, "Error generating access token", http.StatusInternalServerError)
+        return
+    }
+    newRefresh, err := utils.GenerateRefreshToken(uint(userIDFloat), username)
+    if err != nil {
+        http.Error(w, "Error generating refresh token", http.StatusInternalServerError)
+        return
+    }
+    json.NewEncoder(w).Encode(map[string]any{
+        "Status":       "success",
+        "AccessToken":  newAccess,
+        "RefreshToken": newRefresh,
+    })
 }
 
 
@@ -329,14 +255,14 @@ func UpdateUser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var userUpdate models.User
-	decoder := json.NewDecoder(r.Body)
-	encoder := json.NewEncoder(w)
+    var userUpdate models.User
+    decoder := json.NewDecoder(r.Body)
+    encoder := json.NewEncoder(w)
 
-	if err := decoder.Decode(&userUpdate); err != nil {
-		http.Error(w, "Invalid JSON", http.StatusBadRequest)
-		return
-	}
+    if err := decoder.Decode(&userUpdate); err != nil {
+        http.Error(w, "Invalid JSON", http.StatusBadRequest)
+        return
+    }
 
 	defer r.Body.Close()
 	
@@ -344,14 +270,14 @@ func UpdateUser(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Missing attributes", http.StatusBadRequest)
 		return
 	}
-	user.Name = userUpdate.Name
+    user.Name = userUpdate.Name
 
-	hashedPassword, err := utils.HashPassword(user.Password)
-	if err != nil {
-		http.Error(w, "Error hashing password", http.StatusInternalServerError)
-		return
-	}
-	user.Password = hashedPassword
+    hashedPassword, err := utils.HashPassword(userUpdate.Password)
+    if err != nil {
+        http.Error(w, "Error hashing password", http.StatusInternalServerError)
+        return
+    }
+    user.Password = hashedPassword
 
 	config.DB.Save(&user)
 
@@ -363,29 +289,36 @@ func UpdateUser(w http.ResponseWriter, r *http.Request) {
 
 // admin actions
 func InviteUser(w http.ResponseWriter, r *http.Request) {
-	userId := r.PathValue("userId")
-	if userId == "" {
-		http.Error(w, "No valid user ID provided", http.StatusBadRequest)
-		return
-	}
+    userIdent := r.PathValue("userId")
+    if userIdent == "" {
+        http.Error(w, "No valid user identifier provided", http.StatusBadRequest)
+        return
+    }
 
-	chatroomId := r.PathValue("id")
-	if chatroomId == "" {
-		http.Error(w, "No valid chatroom ID provided", http.StatusBadRequest)
-		return
-	}
+    chatroomId := r.PathValue("id")
+    if chatroomId == "" {
+        http.Error(w, "No valid chatroom ID provided", http.StatusBadRequest)
+        return
+    }
 
-	userIdNum, err := strconv.ParseUint(userId, 10, 32) // 10 = base 10, 32-bit conversion
-	if err != nil {
-		http.Error(w, "Invalid user ID, cannot convert to number", http.StatusBadRequest)
-		return
-	}
+    // Resolve user by numeric ID or by username
+    var userIdNum uint64
+    if idNum, err := strconv.ParseUint(userIdent, 10, 32); err == nil {
+        userIdNum = idNum
+    } else {
+        var u models.User
+        if err := config.DB.Where("name = ?", userIdent).First(&u).Error; err != nil {
+            http.Error(w, "Invalid user identifier: not found", http.StatusNotFound)
+            return
+        }
+        userIdNum = uint64(u.ID)
+    }
 
-	chatroomIdNum, err := strconv.ParseUint(userId, 10, 32) // 10 = base 10, 32-bit conversion
-	if err != nil {
-		http.Error(w, "Invalid chatroom ID, cannot convert to number", http.StatusBadRequest)
-		return
-	}
+    chatroomIdNum, err := strconv.ParseUint(chatroomId, 10, 32)
+    if err != nil {
+        http.Error(w, "Invalid chatroom ID, cannot convert to number", http.StatusBadRequest)
+        return
+    }
 
 	isAdmin := r.Context().Value("isAdmin").(bool)
 	if !isAdmin {
@@ -393,35 +326,35 @@ func InviteUser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var admin models.User
-	if err := config.DB.Where(r.Context().Value("userID")).First(&admin).Error; err != nil {
-		http.Error(w, "Error fetching admin", http.StatusInternalServerError)
-		return
-	}
+    var admin models.User
+    if err := config.DB.First(&admin, r.Context().Value("userID")).Error; err != nil {
+        http.Error(w, "Error fetching admin", http.StatusInternalServerError)
+        return
+    }
 
 	var userChatroom models.UserChatroom
-	if err := config.DB.Where("user_id = ? AND chatroom_id = ?", userId, chatroomId).First(&userChatroom).Error; err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
+    if err := config.DB.Where("user_id = ? AND chatroom_id = ?", userIdNum, chatroomIdNum).First(&userChatroom).Error; err != nil {
+        if errors.Is(err, gorm.ErrRecordNotFound) {
 
 			exp_time := time.Now().Add(7 * 24 * time.Hour) // invite expires in 7 days
 			newUserChatroom := models.UserChatroom {
-				UserID:       uint(userIdNum),
-				ChatroomID:   uint(chatroomIdNum),
-				LastJoinTime: nil, 
-				IsInvited: true,
-				IsJoined: false,
-				InviteExpires: &exp_time,
-			}		
-			if err := config.DB.Create(&newUserChatroom).Error; err != nil {
-				http.Error(w, "Error adding user to chatroom", http.StatusInternalServerError)
-				return
-			}
+                UserID:       uint(userIdNum),
+                ChatroomID:   uint(chatroomIdNum),
+                LastJoinTime: nil, 
+                IsInvited: true,
+                IsJoined: false,
+                InviteExpires: &exp_time,
+            }
+            if err := config.DB.Create(&newUserChatroom).Error; err != nil {
+                http.Error(w, "Error adding user to chatroom", http.StatusInternalServerError)
+                return
+            }
 
-		} else {
-			http.Error(w, "Error retrieving user-chatroom association", http.StatusInternalServerError)
-		}
-		return
-	}
+        } else {
+            http.Error(w, "Error retrieving user-chatroom association", http.StatusInternalServerError)
+        }
+        return
+    }
 
 	if userChatroom.IsBanned {
 		http.Error(w, "user is banned from this chatroom", http.StatusBadRequest)

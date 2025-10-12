@@ -1,18 +1,24 @@
 package middleware
 
 import (
-	"context"
-	"errors"
-	"fmt"
-	"time"
-	"net/http"
-	"strconv"
+    "context"
+    "errors"
+    "fmt"
+    "time"
+    "net/http"
+    "strconv"
 
-	"github.com/Wal-20/cli-chat-app/internal/config"
-	"github.com/Wal-20/cli-chat-app/internal/models"
-	"github.com/Wal-20/cli-chat-app/internal/utils"
-	"gorm.io/gorm"
+    "github.com/Wal-20/cli-chat-app/internal/config"
+    "github.com/Wal-20/cli-chat-app/internal/models"
+    "github.com/Wal-20/cli-chat-app/internal/utils"
+    "gorm.io/gorm"
 )
+
+// membershipInfo is cached to avoid frequent DB lookups and to carry admin flag.
+type membershipInfo struct {
+    IsMember bool
+    IsAdmin  bool
+}
 
 func ChatroomMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -20,16 +26,17 @@ func ChatroomMiddleware(next http.Handler) http.Handler {
 		userID := r.Context().Value("userID").(uint)
 		// Get chatroom ID from the request (query params, headers, or body)
 
-		chatroomIDStr := r.PathValue("id")
-		cacheKey := fmt.Sprintf("membership:%v:%s", userID, chatroomIDStr)
-		var isMember bool
+    chatroomIDStr := r.PathValue("id")
+    cacheKey := fmt.Sprintf("membership:%v:%s", userID, chatroomIDStr)
 
-		if isMemberVal, found := utils.MembershipCache.Get(cacheKey); found {
-			if isMember, ok := isMemberVal.(bool); ok && isMember {
-				next.ServeHTTP(w, r)
-				return
-			}
-		}
+        if cached, found := utils.MembershipCache.Get(cacheKey); found {
+            if info, ok := cached.(membershipInfo); ok && info.IsMember {
+                // Ensure admin status is propagated to downstream handlers
+                ctx := context.WithValue(r.Context(), "isAdmin", info.IsAdmin)
+                next.ServeHTTP(w, r.WithContext(ctx))
+                return
+            }
+        }
 	
 		if chatroomIDStr == "" {
 			http.Error(w, "Chatroom ID is required", http.StatusBadRequest)
@@ -52,11 +59,11 @@ func ChatroomMiddleware(next http.Handler) http.Handler {
 			}
 			return
 		}
-		isMember = true
-		
-		utils.MembershipCache.Set(cacheKey, isMember, time.Minute * 5)
-		ctx := context.WithValue(r.Context(), "isAdmin", userChatroom.IsAdmin) // store admin status
-		next.ServeHTTP(w, r.WithContext(ctx))
+        // Cache both membership and admin flag (owner has admin capabilities)
+        adminOrOwner := userChatroom.IsAdmin || userChatroom.IsOwner
+        utils.MembershipCache.Set(cacheKey, membershipInfo{IsMember: true, IsAdmin: adminOrOwner}, time.Minute*5)
+        ctx := context.WithValue(r.Context(), "isAdmin", adminOrOwner) // store admin status
+        next.ServeHTTP(w, r.WithContext(ctx))
 	})
 }
 

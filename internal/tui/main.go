@@ -33,17 +33,19 @@ func main() {
 	var currentModel tea.Model
 
 	// Try to load token pair and set token
-	if tokenPair, err := utils.LoadTokenPair(); err == nil && tokenPair.AccessToken != "" {
+    if tokenPair, err := utils.LoadTokenPair(); err == nil && tokenPair.AccessToken != "" {
 
-		apiClient.SetToken(tokenPair.AccessToken)
-		tokenClaims, err := utils.GetClaimsFromToken(tokenPair.AccessToken)
-		
-		if err == nil {
-			username, ok := tokenClaims["username"].(string)
-			if ok {
-				currentModel = models.NewMainChatModel(username, apiClient)
-			}
-		}
+        apiClient.SetTokenPair(tokenPair.AccessToken, tokenPair.RefreshToken)
+        tokenClaims, err := utils.GetClaimsFromToken(tokenPair.AccessToken)
+        
+        if err == nil {
+            username, ok := tokenClaims["username"].(string)
+            if ok {
+                var uid uint
+                if idf, ok := tokenClaims["userID"].(float64); ok { uid = uint(idf) }
+                currentModel = models.NewMainChatModel(username, uid, apiClient)
+            }
+        }
 	}
 
 	// Fall back to login if token is invalid or username retrieval fails

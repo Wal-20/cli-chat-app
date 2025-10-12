@@ -69,18 +69,19 @@ func (d chatroomDelegate) Render(w io.Writer, m list.Model, index int, listItem 
 }
 
 type MainChatModel struct {
-	apiClient       *client.APIClient
-	username        string
-	userChatrooms   list.Model
-	publicChatrooms list.Model
-	activeList      int
+    apiClient       *client.APIClient
+    userID          uint
+    username        string
+    userChatrooms   list.Model
+    publicChatrooms list.Model
+    activeList      int
 	width           int
 	height          int
 	flashMessage    string
 	flashStyle      lipgloss.Style
 }
 
-func NewMainChatModel(username string, apiClient *client.APIClient) MainChatModel {
+func NewMainChatModel(username string, userID uint, apiClient *client.APIClient) MainChatModel {
 	userChatroomsData, err := apiClient.GetUserChatrooms()
 	if err != nil {
 		panic(err)
@@ -118,14 +119,15 @@ func NewMainChatModel(username string, apiClient *client.APIClient) MainChatMode
 	publicList.SetFilteringEnabled(true)
 	publicList.DisableQuitKeybindings()
 
-	return MainChatModel{
-		apiClient:       apiClient,
-		username:        username,
-		userChatrooms:   userList,
-		publicChatrooms: publicList,
-		activeList:      0,
-		flashStyle:      styles.StatusInfoStyle,
-	}
+    return MainChatModel{
+        apiClient:       apiClient,
+        userID:          userID,
+        username:        username,
+        userChatrooms:   userList,
+        publicChatrooms: publicList,
+        activeList:      0,
+        flashStyle:      styles.StatusInfoStyle,
+    }
 }
 
 func (m MainChatModel) Init() tea.Cmd {
@@ -161,20 +163,23 @@ func (m MainChatModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "tab":
 			m.activeList = (m.activeList + 1) % 2
 			return m, nil
+        case "c":
+            // create new chatroom
+            return NewCreateChatroomModel(m.username, m.userID, m.apiClient), nil
 		case "enter":
 			if m.activeList == 0 {
-				if item, ok := m.userChatrooms.SelectedItem().(chatroomItem); ok {
-					return NewChatroomModel(m.username, item.chatroom, m.apiClient), nil
-				}
+                if item, ok := m.userChatrooms.SelectedItem().(chatroomItem); ok {
+                    return NewChatroomModel(m.username, m.userID, item.chatroom, m.apiClient), nil
+                }
 			} else {
-				if item, ok := m.publicChatrooms.SelectedItem().(chatroomItem); ok {
-					if err := m.apiClient.JoinChatroom(item.chatroom.Id); err != nil {
-						m.flashMessage = fmt.Sprintf("Could not join %s: %s", item.chatroom.Title, err.Error())
-						m.flashStyle = styles.StatusErrorStyle
-						return m, nil
-					}
-					return NewChatroomModel(m.username, item.chatroom, m.apiClient), nil
-				}
+                if item, ok := m.publicChatrooms.SelectedItem().(chatroomItem); ok {
+                    if err := m.apiClient.JoinChatroom(item.chatroom.Id); err != nil {
+                        m.flashMessage = fmt.Sprintf("Could not join %s: %s", item.chatroom.Title, err.Error())
+                        m.flashStyle = styles.StatusErrorStyle
+                        return m, nil
+                    }
+                    return NewChatroomModel(m.username, m.userID, item.chatroom, m.apiClient), nil
+                }
 			}
 		case "q", "ctrl+c":
 			return m, tea.Quit
@@ -223,7 +228,8 @@ func (m MainChatModel) View() string {
 		styles.RenderKeyBinding("Tab", "Switch pane"),
 		styles.RenderKeyBinding("Enter", "Open or join"),
 		styles.RenderKeyBinding("L", "Log out"),
-		styles.RenderKeyBinding("Q", "Quit"),
+		styles.RenderKeyBinding("q", "Quit"),
+		styles.RenderKeyBinding("c", "Create a chatroom"),
 	}
 	help := strings.Join(helpItems, styles.HelpStyle.Render("  "))
 

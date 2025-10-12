@@ -1,16 +1,16 @@
 package handlers
 
 import (
-	"encoding/json"
-	"errors"
-	"fmt"
-	"net/http"
-	"time"
+    "encoding/json"
+    "errors"
+    "fmt"
+    "net/http"
+    "time"
 
-	"github.com/Wal-20/cli-chat-app/internal/config"
-	"github.com/Wal-20/cli-chat-app/internal/models"
-	"github.com/Wal-20/cli-chat-app/internal/utils"
-	"gorm.io/gorm"
+    "github.com/Wal-20/cli-chat-app/internal/config"
+    "github.com/Wal-20/cli-chat-app/internal/models"
+    "github.com/Wal-20/cli-chat-app/internal/utils"
+    "gorm.io/gorm"
 )
 func GetChatrooms(w http.ResponseWriter, r *http.Request) {
 	encoder := json.NewEncoder(w)
@@ -46,33 +46,19 @@ func GetChatrooms(w http.ResponseWriter, r *http.Request) {
 
 func GetPublicChatrooms(w http.ResponseWriter, r *http.Request) {
 
-	userID, ok := r.Context().Value("userID").(uint)
-	if !ok || userID == 0 {
-		http.Error(w, "Unauthorized: missing or invalid user ID", http.StatusUnauthorized)
-		return
-	}
+    userID, ok := r.Context().Value("userID").(uint)
+    if !ok || userID == 0 {
+        http.Error(w, "Unauthorized: missing or invalid user ID", http.StatusUnauthorized)
+        return
+    }
 
-	encoder := json.NewEncoder(w)
-	var chatrooms []models.Chatroom
-
-	// Get public chatrooms which user is not a part of
-	subquery := config.DB.
-	Table("user_chatrooms").
-	Select("chatroom_id").
-	Where("user_id = ?", userID)
-
-	result := config.DB.
-	Preload("Users").
-	Where("id NOT IN (?)", subquery).
-	Find(&chatrooms)
-	if result.Error != nil {
-		http.Error(w, "Failed to retrieve chatrooms", http.StatusInternalServerError)
-		return
-	}
-
-	encoder.Encode(map[string]interface{}{
-		"Chatrooms": chatrooms,
-	})
+    encoder := json.NewEncoder(w)
+    chatrooms, err := Svcs.Chat.GetPublicChatrooms(userID)
+    if err != nil {
+        http.Error(w, "Failed to retrieve chatrooms", http.StatusInternalServerError)
+        return
+    }
+    encoder.Encode(map[string]interface{}{"Chatrooms": chatrooms})
 
 }
 
@@ -92,9 +78,10 @@ func GetUsersByChatroom(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	encoder.Encode(map[string]interface{}{
-		"Users": userChatrooms,
-	})
+    // Match client expectation key: userChatroom
+    encoder.Encode(map[string]interface{}{
+        "userChatroom": userChatrooms,
+    })
 }
 
 
@@ -153,22 +140,25 @@ func CreateChatroom(w http.ResponseWriter, r *http.Request) {
 	}
 	defer r.Body.Close()
 
-	// Validate input
-	if requestBody.RecipientID == 0 {
-		http.Error(w, "Recipient ID is required", http.StatusBadRequest)
-		return
-	}
-	if requestBody.RecipientID == userID {
+	// Validate input (recipient optional)
+	if requestBody.RecipientID == userID && requestBody.RecipientID != 0 {
 		http.Error(w, "Cannot create a chatroom with yourself", http.StatusBadRequest)
 		return
 	}
 
-	// Check if users exist
-	userIDs := []uint{userID, requestBody.RecipientID}
+	// Fetch owner (and recipient if provided)
 	var users []models.User
-	if err := config.DB.Where("id IN ?", userIDs).Find(&users).Error; err != nil || len(users) != 2 {
-		http.Error(w, "Users not found", http.StatusBadRequest)
-		return
+	if requestBody.RecipientID != 0 {
+		userIDs := []uint{userID, requestBody.RecipientID}
+		if err := config.DB.Where("id IN ?", userIDs).Find(&users).Error; err != nil || len(users) != 2 {
+			http.Error(w, "Users not found", http.StatusBadRequest)
+			return
+		}
+	} else {
+		if err := config.DB.Where("id = ?", userID).Find(&users).Error; err != nil || len(users) != 1 {
+			http.Error(w, "User not found", http.StatusBadRequest)
+			return
+		}
 	}
 
 	// Create chatroom
@@ -186,8 +176,10 @@ func CreateChatroom(w http.ResponseWriter, r *http.Request) {
 	now := time.Now()
 	// Add entries to UserChatroom
 	userChatrooms := []models.UserChatroom{
-		{UserID: userID,Name: users[0].Name ,ChatroomID: newChatRoom.Id, IsJoined: true, LastJoinTime: &now, IsAdmin: true},
-		{UserID: requestBody.RecipientID,Name: users[1].Name ,ChatroomID: newChatRoom.Id, IsJoined: false, LastJoinTime: &now},
+		{UserID: userID, Name: users[0].Name, ChatroomID: newChatRoom.Id, IsJoined: true, LastJoinTime: &now, IsAdmin: true},
+	}
+	if requestBody.RecipientID != 0 {
+		userChatrooms = append(userChatrooms, models.UserChatroom{UserID: requestBody.RecipientID, Name: users[1].Name, ChatroomID: newChatRoom.Id, IsJoined: false, LastJoinTime: &now})
 	}
 	if err := config.DB.Create(&userChatrooms).Error; err != nil {
 		http.Error(w, "Failed to link users to chatroom", http.StatusInternalServerError)
@@ -260,76 +252,62 @@ func JoinChatroom(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var chatroom models.Chatroom
-	if err := config.DB.First(&chatroom, chatroomID).Error; err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			http.Error(w, "Chatroom not found", http.StatusNotFound)
-		} else {
-			http.Error(w, "Error retrieving chatroom", http.StatusInternalServerError)
-		}
-		return
-	}
+    var chatroom models.Chatroom
+    if err := config.DB.First(&chatroom, chatroomID).Error; err != nil {
+        if errors.Is(err, gorm.ErrRecordNotFound) {
+            http.Error(w, "Chatroom not found", http.StatusNotFound)
+        } else {
+            http.Error(w, "Error retrieving chatroom", http.StatusInternalServerError)
+        }
+        return
+    }
+    // delegate to service to handle join/create membership (idempotent)
+    if _, err := Svcs.Chat.JoinChatroom(userID, username, chatroomID); err != nil {
+        http.Error(w, "Error adding user to chatroom", http.StatusInternalServerError)
+        return
+    }
 
-	var userChatroom models.UserChatroom
-	if err := config.DB.Where("user_id = ? AND chatroom_id = ?", userID, chatroom.Id).First(&userChatroom).Error; err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
+    // reload membership for checks
+    var userChatroom models.UserChatroom
+    if err := config.DB.Where("user_id = ? AND chatroom_id = ?", userID, chatroom.Id).First(&userChatroom).Error; err == nil {
+        if userChatroom.IsBanned {
+            http.Error(w, "You are banned from this chatroom", http.StatusForbidden)
+            return
+        }
+        if userChatroom.IsJoined {
+            // already joined; return success idempotently
+            w.Header().Set("Content-Type", "application/json")
+            json.NewEncoder(w).Encode(map[string]any{
+                "Status":   "Already in chatroom",
+                "Chatroom": chatroom,
+            })
+            return
+        }
+    }
 
-			now := time.Now()
-			newUserChatroom := models.UserChatroom{
-				UserID:       userID,
-				Name:         username,
-				ChatroomID:   chatroom.Id,
-				LastJoinTime: &now,
-			}
-			if err := config.DB.Create(&newUserChatroom).Error; err != nil {
-				http.Error(w, "Error adding user to chatroom", http.StatusInternalServerError)
-				return
-			}
+    now := time.Now()
+    if !chatroom.IsPublic {
+        if userChatroom.IsInvited && userChatroom.InviteExpires.After(now) {
+            userChatroom.IsInvited = false
+        } else {
+            http.Error(w, "You are not invited to this chatroom, or invitation has expired.", http.StatusForbidden)
+            return
+        }
+    }
 
-			w.Header().Set("Content-Type", "application/json")
-			json.NewEncoder(w).Encode(map[string]interface{}{
-				"Status":   "User added to chatroom successfully",
-				"Chatroom": chatroom,
-			})
-			return
-		} else {
-			http.Error(w, "Error retrieving user-chatroom association", http.StatusInternalServerError)
-			return
-		}
-	}
+    userChatroom.IsJoined = true
+    userChatroom.LastJoinTime = &now
 
-	if userChatroom.IsBanned {
-		http.Error(w, "You are banned from this chatroom", http.StatusForbidden)
-		return
-	}
-	if userChatroom.IsJoined {
-		http.Error(w, "You are already part of this chatroom", http.StatusBadRequest)
-		return
-	}
-
-	now := time.Now()
-	if !chatroom.IsPublic {
-		if userChatroom.IsInvited && userChatroom.InviteExpires.After(now) {
-			userChatroom.IsInvited = false
-		} else {
-			http.Error(w, "You are not invited to this chatroom, or invitation has expired.", http.StatusForbidden)
-			return
-		}
-	}
-
-	userChatroom.IsJoined = true
-	userChatroom.LastJoinTime = &now
-
-	if err := config.DB.Save(&userChatroom).Error; err != nil {
-		http.Error(w, "Error updating user-chatroom association", http.StatusInternalServerError)
-		return
-	}
+    if err := config.DB.Save(&userChatroom).Error; err != nil {
+        http.Error(w, "Error updating user-chatroom association", http.StatusInternalServerError)
+        return
+    }
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]interface{}{
-		"Status":   "User added to chatroom successfully",
-		"Chatroom": chatroom,
-	})
+    json.NewEncoder(w).Encode(map[string]interface{}{
+        "Status":   "User added to chatroom successfully",
+        "Chatroom": chatroom,
+    })
 
 }
 
@@ -369,67 +347,16 @@ func transferOwnership(chatroomId string) error {
 
 
 func LeaveChatroom(w http.ResponseWriter, r *http.Request) {
-	userId := r.Context().Value("userID").(uint)
-	chatroomId := r.PathValue("id")
+    userId := r.Context().Value("userID").(uint)
+    chatroomId := r.PathValue("id")
 
-	// Fetch user-chatroom association
-	var userChatroom models.UserChatroom
-	if err := config.DB.Where("user_id = ? AND chatroom_id = ?", userId, chatroomId).First(&userChatroom).Error; err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			http.Error(w, "User is not associated with this chatroom", http.StatusNotFound)
-		} else {
-			http.Error(w, "Error retrieving user-chatroom association", http.StatusInternalServerError)
-		}
-		return
-	}
-
-	// If user is already not part of the chatroom, return error
-	if !userChatroom.IsJoined {
-		http.Error(w, "User already not part of chatroom", http.StatusBadRequest)
-		return
-	}
-
-	userChatroom.IsJoined = false
-	userChatroom.IsInvited = false
-
-	utils.MembershipCache.Delete(fmt.Sprintf("membership:%v:%s", userId, chatroomId))
-
-	// Check if last user is leaving
-	var remainingUsers int64
-	config.DB.Model(&models.UserChatroom{}).
-		Where("chatroom_id = ? AND is_joined = ?", chatroomId, true).
-		Count(&remainingUsers)
-
-	if remainingUsers < 1 {
-		if err := config.DB.Where("id = ?", chatroomId).Delete(&models.Chatroom{}).Error; err != nil {
-			http.Error(w, "Error deleting chatroom", http.StatusInternalServerError)
-			return
-		}
-		json.NewEncoder(w).Encode(map[string]any{
-			"Status": "Chatroom deleted as last user left",
-		})
-		return
-	}
-
-	// Transfer ownership if the user is the owner
-	if userChatroom.IsOwner {
-		if err := transferOwnership(chatroomId); err != nil {
-			http.Error(w, "Error transferring ownership", http.StatusInternalServerError)
-			return
-		}
-		userChatroom.IsOwner = false
-	}
-
-	// Save user changes
-	if err := config.DB.Save(&userChatroom).Error; err != nil {
-		http.Error(w, "Error updating user status", http.StatusInternalServerError)
-		return
-	}
-
-	// Respond with success
-	json.NewEncoder(w).Encode(map[string]interface{}{
-		"Status": "Left chatroom successfully",
-		"data":   userChatroom,
-	})
+    utils.MembershipCache.Delete(fmt.Sprintf("membership:%v:%s", userId, chatroomId))
+    wasOwner := false // best-effort; can enhance by loading membership
+    res, err := Svcs.Chat.LeaveChatroom(userId, chatroomId, wasOwner)
+    if err != nil {
+        http.Error(w, err.Error(), http.StatusBadRequest)
+        return
+    }
+    json.NewEncoder(w).Encode(res)
 }
 

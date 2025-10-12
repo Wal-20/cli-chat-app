@@ -13,7 +13,10 @@ import (
 
 func NewServer() {
 
-	mux := http.NewServeMux()
+    mux := http.NewServeMux()
+
+    // initialize handler dependencies (services)
+    handlers.InitHandlers()
 
 	mux.HandleFunc("GET /api/health", func(w http.ResponseWriter, r *http.Request) {
 		json.NewEncoder(w).Encode(map[string]any {
@@ -26,6 +29,7 @@ func NewServer() {
 	mux.HandleFunc("POST /api/users", handlers.CreateUser)
 	mux.HandleFunc("POST /api/users/login", handlers.Login)
     mux.HandleFunc("POST /api/users/logout", handlers.LogOut)
+    mux.HandleFunc("POST /api/users/refresh", handlers.RefreshToken)
     mux.Handle("POST /api/users/update", middleware.AuthMiddleware(http.HandlerFunc(handlers.UpdateUser)))
     mux.Handle("GET /api/users/chatrooms", middleware.AuthMiddleware(http.HandlerFunc(handlers.GetChatroomsByUser)))
 

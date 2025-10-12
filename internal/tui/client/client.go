@@ -17,6 +17,7 @@ import (
     "github.com/patrickmn/go-cache"
 
     "github.com/Wal-20/cli-chat-app/internal/models"
+    "github.com/Wal-20/cli-chat-app/internal/utils"
     "github.com/gorilla/websocket"
 )
 
@@ -24,6 +25,7 @@ type APIClient struct {
     baseURL     string
     httpClient  *http.Client
     accessToken string
+    refreshToken string
     cache       *cache.Cache
 }
 
@@ -104,7 +106,17 @@ func NewAPIClient() (*APIClient, error) {
 }
 
 func (c *APIClient) SetToken(token string) {
-	c.accessToken = token
+    c.accessToken = token
+}
+
+func (c *APIClient) SetTokenPair(access, refresh string) {
+    c.accessToken = access
+    c.refreshToken = refresh
+}
+
+// InvalidateUserChatrooms clears the cached user chatrooms list so next load is fresh.
+func (c *APIClient) InvalidateUserChatrooms() {
+    if c.cache != nil { c.cache.Delete("user_chatrooms") }
 }
 
 // Auth endpoints
@@ -147,7 +159,7 @@ func (c *APIClient) GetChatrooms() ([]models.Chatroom, error) {
 	}
 
 	var result struct {
-		Chatrooms []models.Chatroom `json:"chatrooms"` // Match API structure
+		Chatrooms []models.Chatroom `json:"Chatrooms"`
 	}
 
 	err = json.Unmarshal(resp, &result)
@@ -196,9 +208,9 @@ func (c *APIClient) GetUsersByChatroom(chatroomID uint) ([]models.UserChatroom, 
 		return nil, fmt.Errorf("failed GET %s: %w", endpoint, err)
 	}
 
-	var result struct {
-		UserChatroom []models.UserChatroom `json:"userChatroom"`
-	}
+    var result struct {
+        UserChatroom []models.UserChatroom `json:"userChatroom"`
+    }
 
 	err = json.Unmarshal(resp, &result)
 	if err != nil {
@@ -229,16 +241,6 @@ func (c *APIClient) LeaveChatroom(chatroomID string) error {
 
 // Message endpoints
 func (c *APIClient) GetMessages(chatroomID uint) ([]models.MessageWithUser, error) {
-    key := fmt.Sprintf("chatroom_messages:%v", chatroomID)
-    if c.cache != nil {
-        if v, ok := c.cache.Get(key); ok {
-            if msgs, ok := v.([]models.MessageWithUser); ok {
-                cp := append([]models.MessageWithUser(nil), msgs...)
-                return cp, nil
-            }
-        }
-    }
-
     resp, err := c.get(fmt.Sprintf("/chatrooms/%v/messages", chatroomID))
     if err != nil {
         return nil, err
@@ -248,10 +250,6 @@ func (c *APIClient) GetMessages(chatroomID uint) ([]models.MessageWithUser, erro
     }
     if err := json.Unmarshal(resp, &result); err != nil {
         return nil, err
-    }
-    if c.cache != nil {
-        cp := append([]models.MessageWithUser(nil), result.Messages...)
-        c.cache.Set(key, cp, cache.DefaultExpiration)
     }
     return result.Messages, nil
 }
@@ -263,10 +261,6 @@ func (c *APIClient) SendMessage(chatroomID, content string) (map[string]any, err
     res, err := c.post(fmt.Sprintf("/chatrooms/%s/messages", chatroomID), data)
     if err != nil {
         return nil, err
-    }
-    // Invalidate cached messages for this chatroom to ensure refresh
-    if c.cache != nil {
-        c.cache.Delete("chatroom_messages:" + chatroomID)
     }
     return res, nil
 }
@@ -294,10 +288,19 @@ func (c *APIClient) SubscribeChatroom(chatroomID uint) (<-chan models.MessageWit
     }
     conn, resp, err := websocket.DefaultDialer.Dial(u.String(), header)
     if err != nil {
-        if resp != nil {
-            return nil, nil, fmt.Errorf("ws dial failed: %s", resp.Status)
+        if resp != nil && resp.StatusCode == 401 && c.refreshToken != "" {
+            if rerr := c.refreshTokens(); rerr == nil {
+                header = http.Header{}
+                if c.accessToken != "" { header.Set("Authorization", "Bearer "+c.accessToken) }
+                conn, resp, err = websocket.DefaultDialer.Dial(u.String(), header)
+            }
         }
-        return nil, nil, fmt.Errorf("ws dial error: %w", err)
+        if err != nil {
+            if resp != nil {
+                return nil, nil, fmt.Errorf("ws dial failed: %s", resp.Status)
+            }
+            return nil, nil, fmt.Errorf("ws dial error: %w", err)
+        }
     }
 
     ch := make(chan models.MessageWithUser, 32)
@@ -334,34 +337,75 @@ func (c *APIClient) KickUser(chatroomID, userID string) error {
 }
 
 func (c *APIClient) BanUser(chatroomID, userID string) error {
-	_, err := c.post(fmt.Sprintf("/users/chatrooms/%s/ban/%s", chatroomID, userID), nil)
-	return err
+    _, err := c.post(fmt.Sprintf("/users/chatrooms/%s/ban/%s", chatroomID, userID), nil)
+    return err
+}
+
+// CreateChatroom creates a chatroom; recipient is optional (handled server-side).
+func (c *APIClient) CreateChatroom(title string, maxUsers int, isPublic bool) (models.Chatroom, error) {
+    data := map[string]any{
+        "title":        title,
+        "maxUserCount": maxUsers,
+        "is_public":    isPublic,
+    }
+    res, err := c.post("/chatrooms", data)
+    if err != nil {
+        return models.Chatroom{}, err
+    }
+    // The API returns a Chatroom or a map depending on handler; handle both
+    // Try to marshal back into Chatroom
+    b, _ := json.Marshal(res)
+    var room models.Chatroom
+    if err := json.Unmarshal(b, &room); err == nil && room.Id != 0 {
+        return room, nil
+    }
+    // Fallback if server wraps object (e.g., {"Chatroom": {...}})
+    if v, ok := res["Chatroom"]; ok {
+        rb, _ := json.Marshal(v)
+        if err := json.Unmarshal(rb, &room); err == nil {
+            return room, nil
+        }
+    }
+    return models.Chatroom{}, fmt.Errorf("unexpected response creating chatroom")
 }
 
 // Helper methods for HTTP requests
 func (c *APIClient) get(path string) ([]byte, error) {
-	req, err := http.NewRequest("GET", c.baseURL+path, nil)
-	if err != nil {
-		return nil, err
-	}
-	return c.doRequest(req)
+    req, err := http.NewRequest("GET", c.baseURL+path, nil)
+    if err != nil {
+        return nil, err
+    }
+    body, err := c.doRequest(req)
+    if err != nil && isUnauthorized(err) && c.refreshToken != "" {
+        if rerr := c.refreshTokens(); rerr == nil {
+            req2, _ := http.NewRequest("GET", c.baseURL+path, nil)
+            return c.doRequest(req2)
+        }
+    }
+    return body, err
 }
 
 func (c *APIClient) post(path string, data interface{}) (map[string]interface{}, error) {
-	jsonData, err := json.Marshal(data)
-	if err != nil {
-		return nil, err
-	}
+    jsonData, err := json.Marshal(data)
+    if err != nil {
+        return nil, err
+    }
 
-	req, err := http.NewRequest("POST", c.baseURL+path, bytes.NewBuffer(jsonData))
-	if err != nil {
-		return nil, err
-	}
+    req, err := http.NewRequest("POST", c.baseURL+path, bytes.NewBuffer(jsonData))
+    if err != nil {
+        return nil, err
+    }
 
-	resp, err := c.doRequest(req)
-	if err != nil {
-		return nil, err
-	}
+    resp, err := c.doRequest(req)
+    if err != nil && isUnauthorized(err) && c.refreshToken != "" {
+        if rerr := c.refreshTokens(); rerr == nil {
+            req2, _ := http.NewRequest("POST", c.baseURL+path, bytes.NewBuffer(jsonData))
+            resp, err = c.doRequest(req2)
+        }
+    }
+    if err != nil {
+        return nil, err
+    }
 
 	var result map[string]interface{}
 	err = json.Unmarshal(resp, &result)
@@ -391,5 +435,37 @@ func (c *APIClient) doRequest(req *http.Request) ([]byte, error) {
 		return nil, fmt.Errorf("HTTP error: %s, Response: %s", resp.Status, string(body))
 	}
 
-	return body, nil // Return the actual response body
+    return body, nil // Return the actual response body
+}
+
+func isUnauthorized(err error) bool {
+    if err == nil { return false }
+    return strings.Contains(err.Error(), "HTTP error: 401")
+}
+
+func (c *APIClient) refreshTokens() error {
+    payload := map[string]string{"refreshToken": c.refreshToken}
+    b, _ := json.Marshal(payload)
+    req, err := http.NewRequest("POST", c.baseURL+"/users/refresh", bytes.NewBuffer(b))
+    if err != nil { return err }
+    req.Header.Set("Content-Type", "application/json")
+    resp, err := c.httpClient.Do(req)
+    if err != nil { return err }
+    defer resp.Body.Close()
+    rb, _ := io.ReadAll(resp.Body)
+    if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+        return fmt.Errorf("refresh failed: %s, Response: %s", resp.Status, string(rb))
+    }
+    var res map[string]any
+    if err := json.Unmarshal(rb, &res); err != nil { return err }
+    newAccess, _ := res["AccessToken"].(string)
+    newRefresh, _ := res["RefreshToken"].(string)
+    if newAccess == "" || newRefresh == "" {
+        return fmt.Errorf("refresh failed: missing tokens")
+    }
+    c.accessToken = newAccess
+    c.refreshToken = newRefresh
+    if c.cache != nil { c.cache.Flush() }
+    _ = utils.SaveTokenPair(utils.TokenPair{AccessToken: newAccess, RefreshToken: newRefresh})
+    return nil
 }
