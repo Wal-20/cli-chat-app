@@ -468,13 +468,13 @@ func (m ChatroomModel) renderSidebar() string {
 		line := styles.ParticipantLineStyle.Render(user.Name)
 		badges := []string{}
 		if user.IsOwner {
-			badges = append(badges, styles.ParticipantBadgeOwnerStyle.Render("owner"))
+			badges = append(badges, styles.ParticipantBadgeOwnerStyle.Render(" owner"))
 		}
 		if user.IsAdmin {
-			badges = append(badges, styles.ParticipantBadgeAdminStyle.Render("admin"))
+			badges = append(badges, styles.ParticipantBadgeAdminStyle.Render(" admin"))
 		}
 		if strings.EqualFold(user.Name, m.username) {
-			badges = append(badges, styles.ParticipantBadgeYouStyle.Render("you"))
+			badges = append(badges, styles.ParticipantBadgeYouStyle.Render(" you"))
 		}
 		if len(badges) > 0 {
 			line = lipgloss.JoinHorizontal(lipgloss.Left, line, strings.Join(badges, " "))
