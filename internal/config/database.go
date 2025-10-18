@@ -1,12 +1,12 @@
 package config
 
 import (
-	"gorm.io/driver/mysql"
-	"os"
-	"gorm.io/gorm"
 	"github.com/Wal-20/cli-chat-app/internal/models"
 	"github.com/joho/godotenv"
+	"gorm.io/driver/mysql"
+	"gorm.io/gorm"
 	"log"
+	"os"
 )
 
 var DB *gorm.DB // global instance
@@ -15,10 +15,10 @@ func InitDB() error {
 
 	err := godotenv.Load()
 	if err != nil {
-		log.Fatalf("Error loading environment variables: %v", err)
+		log.Println("No .env file found, checking environment variables instead...")
 	}
 
-	dsn := os.Getenv("SERVICE_URI") 
+	dsn := os.Getenv("SERVICE_URI")
 	if dsn == "" {
 		log.Fatal("CANNOT READ SERVICE_URI IN ENVIRONMENT")
 	}
@@ -46,4 +46,3 @@ func InitDB() error {
 	log.Println("DB SYNC")
 	return nil
 }
-

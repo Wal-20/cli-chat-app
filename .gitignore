@@ -2,5 +2,5 @@
 **/*.exe
 **/build-errors.log
 **/node_modules/
-!.gitignore
 .vscode/
+releases/

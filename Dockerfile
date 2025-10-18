@@ -1,27 +1,35 @@
+# --- Build stage ---
+FROM golang:1.23-alpine AS build
 
-# 1. Use official Go base image
-FROM golang:1.24-alpine AS build
-
-# 2. Set working directory (think of it as a cd command)
 WORKDIR /app
 
-# 3. Copy files into container
+RUN apk add --no-cache bash
+
+# Copy dependency files first (for Docker layer caching)
+COPY go.mod go.sum ./
+
+RUN go mod download
+
 COPY . .
 
-# 4. Build the Go binary
-RUN go build -o app .
+RUN chmod +x build.sh install.sh
 
-# --- Production Image ---
+# Build server and client binaries, no-source depends on server secrets instead of .env file in container
+RUN ./build.sh --no-source
+
+# --- Runtime stage ---
 FROM alpine:latest
 
-# 5. Copy binary from builder
-COPY --from=build /app/app /app/app
-
-# 6. Set working directory
 WORKDIR /app
 
-# 7. Set environment variable (optional)
-# ENV JWT_SECRET=supersecret
+# Copy built binaries, install script, and releases
+COPY --from=build /app/releases ./releases
+COPY --from=build /app/install.sh .
+COPY --from=build /app/releases/server ./server
 
-# 8. Run the app
-CMD ["./app"]
+# Expose port for HTTP
+EXPOSE 8080
+
+# Start the Go server
+CMD ["./server"]
+

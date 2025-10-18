@@ -47,6 +47,7 @@ TODOS:
 - Expose the app to curl requests instead of just relying on users installing binaries
 - (Chore) make the json tags in the backend models snake case, make sure they're the same as the ones in the client
 - write a deployment workflow that recompiles the binaries and redeploys and whatever else is neccessary when merging a branch or pushing to master
+- Add a page to display message that server is down, instead of showing nothing at all
 
 UI PAGES TODO:
 - invite / kick / ban interfaces
