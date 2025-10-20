@@ -14,7 +14,10 @@ COPY . .
 
 RUN chmod +x build.sh install.sh
 
-# Build server and client binaries, no-source depends on server secrets instead of .env file in container
+ARG SERVER_URL
+ENV SERVER_URL=${SERVER_URL}
+
+# Build server and client binaries, no-source depends on server secrets, or args passed into build, instead of .env file in container
 RUN ./build.sh --no-source
 
 # --- Runtime stage ---

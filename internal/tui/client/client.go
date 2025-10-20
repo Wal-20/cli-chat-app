@@ -29,7 +29,7 @@ type APIClient struct {
 	cache        *cache.Cache
 }
 
-var DefaultServerURLB64 string
+var DefaultServerURLB64 string // built into the binary with ldflags, refer to ./build.sh
 
 func NewAPIClient() (*APIClient, error) {
 	// Load .env locally if available (safe no-op in production)

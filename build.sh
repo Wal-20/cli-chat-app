@@ -18,13 +18,13 @@ fi
 RELEASE_DIR="./releases"
 mkdir -p "$RELEASE_DIR"
 
-#if [[ -z "${SERVER_URL:-}" ]]; then
-  #echo "❌ SERVER_URL not found in environment or .env"
- # exit 1
-#fi
+if [[ -z "${SERVER_URL:-}" ]]; then
+  echo "❌ SERVER_URL not found in environment or .env"
+  exit 1
+fi
 
 # Base64-encode the server URL to embed safely into the binary
-SERVER_URL_B64=$(echo -n "https://cli-chat-app-dawn-smoke-6134.fly.dev" | base64)
+SERVER_URL_B64=$(echo -n "$SERVER_URL" | base64)
 
 echo "Building server..."
 go build -o "$RELEASE_DIR/server" main.go

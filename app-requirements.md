@@ -31,23 +31,16 @@ To prevent spamming or flooding in chatrooms, consider adding rate limits on the
 Add "Kick" functionality for Admins: Allow admins to kick users from chatrooms instead of just adding/inviting users. This will give admins more control over chatroom management.
 kicked users can req to join back or be added by admin, banned users cannot, and chatroom will not be displayed to them on search until they are unbanned.
 
-
-Custom Error Messages: Provide informative feedback to users when they perform invalid actions (e.g., trying to join a non-existent room or sending messages without being in a room).
-
-
-TODOS:
-- IMPORTANT: remove stale user-chatroom associations from db, should be done when user is not banned, but hasn't joined in 30 days
+Custom Error Messages: Provide informative feedback to users when they perform invalid actions (e.g., trying to join a non-existent room or sending messages without being in a room). TODOS: - IMPORTANT: remove stale user-chatroom associations from db, should be done when user is not banned, but hasn't joined in 30 days
 - remove old notifications
-- admin actions: add any you find 
 - notifications for user
 - send a notification if admin has kicked the user
 - for the future, look into errors raised from the db and raise the proper messages
 - give the ability for owner to make admins
 - handle owner / last admin leaving chatroom (no admins left in a chatroom) 
-- Expose the app to curl requests instead of just relying on users installing binaries
 - (Chore) make the json tags in the backend models snake case, make sure they're the same as the ones in the client
-- write a deployment workflow that recompiles the binaries and redeploys and whatever else is neccessary when merging a branch or pushing to master
 - Add a page to display message that server is down, instead of showing nothing at all
+- Right now the deployment flow is passing the SERVER_URL into the dockerfile, check how that works for other methods
 
 UI PAGES TODO:
 - invite / kick / ban interfaces
