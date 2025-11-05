@@ -205,6 +205,21 @@ func (c *APIClient) GetUsersByChatroom(chatroomID uint) ([]models.UserChatroom, 
 	return result.UserChatroom, nil
 }
 
+func (c *APIClient) GetNotifications() (models.NotificationsResponse, error) {
+	var result models.NotificationsResponse
+	body, err := c.get("/users/notifications")
+	if err != nil {
+		return result, err
+	}
+	if len(body) == 0 {
+		return result, nil
+	}
+	if err := json.Unmarshal(body, &result); err != nil {
+		return models.NotificationsResponse{}, err
+	}
+	return result, nil
+}
+
 func (c *APIClient) JoinChatroom(chatroomID uint) error {
 	_, err := c.post(fmt.Sprintf("/chatrooms/%v/join", chatroomID), nil)
 	if err == nil && c.cache != nil {
@@ -327,6 +342,23 @@ func (c *APIClient) KickUser(chatroomID, userID string) error {
 func (c *APIClient) BanUser(chatroomID, userID string) error {
 	_, err := c.post(fmt.Sprintf("/users/chatrooms/%s/ban/%s", chatroomID, userID), nil)
 	return err
+}
+
+func (c *APIClient) AcceptInvite(membershipID uint) (models.Chatroom, error) {
+	res, err := c.post(fmt.Sprintf("/users/invitations/%d/accept", membershipID), nil)
+	if err != nil {
+		return models.Chatroom{}, err
+	}
+	if c.cache != nil {
+		c.cache.Delete("user_chatrooms")
+	}
+	var chatroom models.Chatroom
+	if payload, ok := res["Chatroom"]; ok {
+		if b, err := json.Marshal(payload); err == nil {
+			_ = json.Unmarshal(b, &chatroom)
+		}
+	}
+	return chatroom, nil
 }
 
 // CreateChatroom creates a chatroom; recipient is optional (handled server-side).

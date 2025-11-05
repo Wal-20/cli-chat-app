@@ -12,7 +12,6 @@ import (
 	"github.com/Wal-20/cli-chat-app/internal/tui/client"
 	"github.com/Wal-20/cli-chat-app/internal/tui/styles"
 	"github.com/charmbracelet/bubbles/textarea"
-	"github.com/charmbracelet/bubbles/textinput"
 	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
@@ -22,6 +21,9 @@ type sendMessageResultMsg struct {
 	message models.MessageWithUser
 	err     error
 }
+
+// invite flow result message
+// (obsolete) inviteResultMsg removed; modal handles invites now
 
 type ChatroomModel struct {
 	apiClient          *client.APIClient
@@ -42,9 +44,6 @@ type ChatroomModel struct {
 	flashStyle         lipgloss.Style
 	wsChan             <-chan models.MessageWithUser
 	wsCancel           func()
-	// invite
-	inviting    bool
-	inviteInput textinput.Model
 }
 
 func NewChatroomModel(username string, userID uint, chatroom models.Chatroom, apiClient *client.APIClient) ChatroomModel {
@@ -69,23 +68,20 @@ func NewChatroomModel(username string, userID uint, chatroom models.Chatroom, ap
 
 	input.Cursor.Style = styles.KeyStyle
 
-	messages, err := apiClient.GetMessages(chatroom.Id)
-	if err != nil {
-		panic(err)
+	messages, msgErr := apiClient.GetMessages(chatroom.Id)
+	if msgErr != nil {
+		messages = []models.MessageWithUser{}
 	}
 
-	users, err := apiClient.GetUsersByChatroom(chatroom.Id)
-	if err != nil {
-		panic(err)
+	users, userErr := apiClient.GetUsersByChatroom(chatroom.Id)
+	if userErr != nil {
+		users = []models.UserChatroom{}
 	}
 
 	vp := viewport.New(80, 20)
 	vp.Style = styles.ConversationWrapperStyle
 	vp.MouseWheelEnabled = true
 
-	inv := textinput.New()
-	inv.Prompt = "Invite (id or name): "
-	inv.Placeholder = "e.g., 42 or alice"
 	model := ChatroomModel{
 		apiClient:    apiClient,
 		username:     username,
@@ -98,7 +94,20 @@ func NewChatroomModel(username string, userID uint, chatroom models.Chatroom, ap
 		sidebarWidth: styles.SidebarStyle.GetWidth(),
 		showSidebar:  true,
 		flashStyle:   styles.StatusInfoStyle,
-		inviteInput:  inv,
+	}
+
+	if msgErr != nil {
+		model.flashMessage = fmt.Sprintf("Failed to load messages: %s", msgErr.Error())
+		model.flashStyle = styles.StatusErrorStyle
+	}
+	if userErr != nil {
+		errMsg := fmt.Sprintf("Failed to load participants: %s", userErr.Error())
+		if model.flashMessage != "" {
+			model.flashMessage += " | " + errMsg
+		} else {
+			model.flashMessage = errMsg
+			model.flashStyle = styles.StatusErrorStyle
+		}
 	}
 
 	// Attempt to subscribe to websocket updates for this room
@@ -133,11 +142,6 @@ func (m ChatroomModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "ctrl+c":
 			return m, tea.Quit
 		case "esc":
-			if m.inviting {
-				m.inviting = false
-				m.inviteInput.Blur()
-				return m, nil
-			}
 			if m.wsCancel != nil {
 				m.wsCancel()
 			}
@@ -150,30 +154,15 @@ func (m ChatroomModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "ctrl+d":
 			m.viewport.HalfViewDown()
 			return m, nil
-		case "ctrl+i":
-			if !m.inviting {
-				if !m.currentUserIsAdmin() {
-					m.flashMessage = "Only admins can invite users"
-					m.flashStyle = styles.StatusErrorStyle
-					return m, nil
-				}
-				m.inviting = true
-				m.inviteInput.SetValue("")
-				m.inviteInput.Focus()
-				m.flashMessage = ""
+		case "ctrl+o":
+			if !m.currentUserIsAdmin() {
+				m.flashMessage = "Only admins can invite users"
+				m.flashStyle = styles.StatusErrorStyle
 				return m, nil
 			}
+			modal := NewInviteUserModal(m.apiClient, m.chatroom.Id, m)
+			return modal, modal.Init()
 		case "enter":
-			if m.inviting {
-				ident := strings.TrimSpace(m.inviteInput.Value())
-				if ident == "" {
-					m.flashMessage = "Enter user id or username"
-					m.flashStyle = styles.StatusErrorStyle
-					return m, nil
-				}
-				m.inviting = false
-				return m, inviteUserCmd(m.apiClient, m.chatroom.Id, ident)
-			}
 			if m.sending {
 				return m, nil
 			}
@@ -240,15 +229,9 @@ func (m ChatroomModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, tea.Batch(cmds...)
 	}
 
-	if m.inviting {
-		var ic tea.Cmd
-		m.inviteInput, ic = m.inviteInput.Update(msg)
-		cmds = append(cmds, ic)
-	} else {
-		var inputCmd tea.Cmd
-		m.input, inputCmd = m.input.Update(msg)
-		cmds = append(cmds, inputCmd)
-	}
+	var inputCmd tea.Cmd
+	m.input, inputCmd = m.input.Update(msg)
+	cmds = append(cmds, inputCmd)
 
 	return m, tea.Batch(cmds...)
 }
@@ -298,10 +281,6 @@ func (m ChatroomModel) View() string {
 		}
 	}
 	inputView := styles.InputAreaStyle.Copy().Width(inputWidth).Render(m.input.View())
-	if m.inviting {
-		inviteView := styles.InputFieldFocusedStyle.Render(m.inviteInput.View())
-		inputView = inviteView + "\n" + inputView
-	}
 
 	info := fmt.Sprintf("%d messages | %d participants", len(m.messages), len(m.users))
 	statusStyle := styles.StatusInfoStyle
@@ -313,10 +292,8 @@ func (m ChatroomModel) View() string {
 	helpItems := []string{
 		styles.RenderKeyBinding("Esc", "Back"),
 		styles.RenderKeyBinding("Enter", "Send"),
-		styles.RenderKeyBinding("Shift+Enter", "New line"),
-		styles.RenderKeyBinding("Ctrl+i", "Invite User"),
-		styles.RenderKeyBinding("Ctrl+c", "Quit"),
-		styles.RenderKeyBinding("Ctrl+U/Ctrl+D", "Scroll"),
+		styles.RenderKeyBinding("Ctrl+O", "Invite User"),
+		styles.RenderKeyBinding("Ctrl + c", "Quit"),
 	}
 	help := strings.Join(helpItems, styles.HelpStyle.Render("  "))
 
@@ -533,16 +510,7 @@ func sendMessage(apiClient *client.APIClient, chatroomID uint, username, content
 }
 
 // invite user by id or username
-func inviteUserCmd(apiClient *client.APIClient, chatroomID uint, ident string) tea.Cmd {
-	return func() tea.Msg {
-		err := apiClient.InviteUser(strconv.FormatUint(uint64(chatroomID), 10), ident)
-		// Reuse flash mechanism via sendMessageResultMsg with err only
-		if err != nil {
-			return sendMessageResultMsg{err: fmt.Errorf("invite failed: %w", err)}
-		}
-		return sendMessageResultMsg{message: models.MessageWithUser{Content: "", Username: ""}}
-	}
-}
+// (obsolete) inviteUserCmd moved to InviteUserModal
 
 func getUserRole(users []models.UserChatroom, username string, currentUsername string) string {
 	if strings.EqualFold(username, currentUsername) {

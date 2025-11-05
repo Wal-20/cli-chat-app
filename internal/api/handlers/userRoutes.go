@@ -1,19 +1,18 @@
 package handlers
 
 import (
-    "encoding/json"
-    "errors"
-    "fmt"
-    "net/http"
-    "strings"
-    "strconv"
-    "time"
-    "github.com/Wal-20/cli-chat-app/internal/config"
-    "github.com/Wal-20/cli-chat-app/internal/models"
-    "github.com/Wal-20/cli-chat-app/internal/utils"
-    "gorm.io/gorm"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"github.com/Wal-20/cli-chat-app/internal/config"
+	"github.com/Wal-20/cli-chat-app/internal/models"
+	"github.com/Wal-20/cli-chat-app/internal/utils"
+	"gorm.io/gorm"
+	"net/http"
+	"strconv"
+	"strings"
+	"time"
 )
-
 
 func GetUsers(w http.ResponseWriter, r *http.Request) {
 	encoder := json.NewEncoder(w)
@@ -56,192 +55,208 @@ func GetUsers(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+func GetNotifications(w http.ResponseWriter, r *http.Request) {
+	userID, ok := r.Context().Value("userID").(uint)
+	if !ok || userID == 0 {
+		http.Error(w, "Unauthorized", http.StatusUnauthorized)
+		return
+	}
+
+	payload, err := Svcs.Notification.GetUserNotifications(userID)
+	if err != nil {
+		http.Error(w, "Error retrieving notifications", http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(payload)
+}
+
 func GetChatroomsByUser(w http.ResponseWriter, r *http.Request) {
 	userID := r.Context().Value("userID").(uint)
 
-	var user models.User
-	err := config.DB.Preload("Chatrooms").First(&user, userID).Error
-	if err != nil {
+	var chatrooms []models.Chatroom
+	// Only return rooms the user actually joined
+	if err := config.DB.
+		Joins("JOIN user_chatrooms ON user_chatrooms.chatroom_id = chatrooms.id").
+		Where("user_chatrooms.user_id = ? AND user_chatrooms.is_joined = ?", userID, true).
+		Find(&chatrooms).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			http.Error(w, "No chatrooms found for user", http.StatusNotFound)		
+			http.Error(w, "No chatrooms found for user", http.StatusNotFound)
 		} else {
-			http.Error(w, "Error retrieving Chatrooms", http.StatusInternalServerError)		
+			http.Error(w, "Error retrieving Chatrooms", http.StatusInternalServerError)
 		}
 		return
 	}
 
-	json.NewEncoder(w).Encode(map[string]interface{} {
-		"User": user,
-		"Chatrooms": user.Chatrooms,
+	json.NewEncoder(w).Encode(map[string]any{
+		"Chatrooms": chatrooms,
 	})
 }
 
 func Login(w http.ResponseWriter, r *http.Request) {
-    var body models.User
-    decoder := json.NewDecoder(r.Body)
-    encoder := json.NewEncoder(w)
+	var body models.User
+	decoder := json.NewDecoder(r.Body)
+	encoder := json.NewEncoder(w)
 
-    if err := decoder.Decode(&body); err != nil {
-        http.Error(w, "Invalid JSON", http.StatusBadRequest)
-        return
-    }
+	if err := decoder.Decode(&body); err != nil {
+		http.Error(w, "Invalid JSON", http.StatusBadRequest)
+		return
+	}
 
-    // Validate user inputs
-    if body.Name == "" || body.Password == "" {
-        http.Error(w, "Invalid User", http.StatusBadRequest)
-        return
-    }
+	// Validate user inputs
+	if body.Name == "" || body.Password == "" {
+		http.Error(w, "Invalid User", http.StatusBadRequest)
+		return
+	}
 
 	defer r.Body.Close()
 
-    accessToken, refreshToken, _, err := Svcs.Auth.Login(body.Name, body.Password)
-    if err != nil {
-        if errors.Is(err, gorm.ErrRecordNotFound) {
-            http.Error(w, "User not found", http.StatusNotFound)
-            return
-        }
-        if err.Error() == "invalid password" {
-            http.Error(w, "Invalid password", http.StatusUnauthorized)
-            return
-        }
-        http.Error(w, "Authentication failed", http.StatusUnauthorized)
-        return
-    }
+	accessToken, refreshToken, _, err := Svcs.Auth.Login(body.Name, body.Password)
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			http.Error(w, "User not found", http.StatusNotFound)
+			return
+		}
+		if err.Error() == "invalid password" {
+			http.Error(w, "Invalid password", http.StatusUnauthorized)
+			return
+		}
+		http.Error(w, "Authentication failed", http.StatusUnauthorized)
+		return
+	}
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
-    encoder.Encode(map[string]interface{}{
-        "Status":       "success",
-        "AccessToken":  accessToken,
-        "RefreshToken": refreshToken,
-    })
+	encoder.Encode(map[string]any{
+		"Status":       "success",
+		"AccessToken":  accessToken,
+		"RefreshToken": refreshToken,
+	})
 }
 
-
 func LogOut(w http.ResponseWriter, r *http.Request) {
-    // Stateless: instruct the client to clear its local tokens; drop cached claims if present.
-    authHeader := r.Header.Get("Authorization")
-    if strings.HasPrefix(authHeader, "Bearer ") {
-        utils.AuthCache.Delete(strings.TrimPrefix(authHeader, "Bearer "))
-    }
-    json.NewEncoder(w).Encode(map[string]interface{}{
-        "Status": "Logged out successfully",
-    })
+	// Stateless: instruct the client to clear its local tokens; drop cached claims if present.
+	authHeader := r.Header.Get("Authorization")
+	if strings.HasPrefix(authHeader, "Bearer ") {
+		utils.AuthCache.Delete(strings.TrimPrefix(authHeader, "Bearer "))
+	}
+	json.NewEncoder(w).Encode(map[string]any{
+		"Status": "Logged out successfully",
+	})
 }
 
 func DeleteUser(w http.ResponseWriter, r *http.Request) {
-    userID, ok := r.Context().Value("userID").(uint)
-    if !ok || userID == 0 {
-        http.Error(w, "Unauthorized", http.StatusUnauthorized)
-        return
-    }
-    if err := config.DB.Delete(&models.User{}, userID).Error; err != nil {
-        if errors.Is(err, gorm.ErrRecordNotFound) {
-            http.Error(w, "User not found", http.StatusNotFound)
-        } else {
-            http.Error(w, "Error fetching user", http.StatusInternalServerError)
-        }
-        return
-    }
-    json.NewEncoder(w).Encode(map[string]interface{}{
-        "Status": "User Deleted successfully",
-    })
+	userID, ok := r.Context().Value("userID").(uint)
+	if !ok || userID == 0 {
+		http.Error(w, "Unauthorized", http.StatusUnauthorized)
+		return
+	}
+	if err := config.DB.Delete(&models.User{}, userID).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			http.Error(w, "User not found", http.StatusNotFound)
+		} else {
+			http.Error(w, "Error fetching user", http.StatusInternalServerError)
+		}
+		return
+	}
+	json.NewEncoder(w).Encode(map[string]any{
+		"Status": "User Deleted successfully",
+	})
 }
 
-
 func CreateUser(w http.ResponseWriter, r *http.Request) {
-    var body models.User
+	var body models.User
 
-    decoder := json.NewDecoder(r.Body)
-    encoder := json.NewEncoder(w)
+	decoder := json.NewDecoder(r.Body)
+	encoder := json.NewEncoder(w)
 
-    if err := decoder.Decode(&body); err != nil {
-        http.Error(w, "Invalid JSON", http.StatusBadRequest)
-        return
-    }
+	if err := decoder.Decode(&body); err != nil {
+		http.Error(w, "Invalid JSON", http.StatusBadRequest)
+		return
+	}
 
 	defer r.Body.Close()
 
-    if body.Name == "" || body.Password == "" {
-        http.Error(w, "Invalid User", http.StatusBadRequest)
-        return
-    }
-    accessToken, refreshToken, user, err := Svcs.Auth.Register(body.Name, body.Password)
-    if err != nil {
-        http.Error(w, "Error creating user", http.StatusBadRequest)
-        return
-    }
+	if body.Name == "" || body.Password == "" {
+		http.Error(w, "Invalid User", http.StatusBadRequest)
+		return
+	}
+	accessToken, refreshToken, user, err := Svcs.Auth.Register(body.Name, body.Password)
+	if err != nil {
+		http.Error(w, fmt.Sprintf("Error creating user: %v", err), http.StatusBadRequest)
+		return
+	}
 
-    w.Header().Set("Content-Type", "application/json")
-    w.WriteHeader(http.StatusOK)
-    encoder.Encode(map[string]interface{}{
-        "Status": "User created successfully",
-        "User":   user,
-        "AccessToken": accessToken,
-        "RefreshToken": refreshToken,
-    })
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	encoder.Encode(map[string]any{
+		"Status":       "User created successfully",
+		"User":         user,
+		"AccessToken":  accessToken,
+		"RefreshToken": refreshToken,
+	})
 
 }
 
 // RefreshToken accepts a refresh token and returns a new access/refresh token pair.
 func RefreshToken(w http.ResponseWriter, r *http.Request) {
-    var body map[string]string
-    if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-        http.Error(w, "Invalid JSON", http.StatusBadRequest)
-        return
-    }
-    defer r.Body.Close()
-    refresh := body["refreshToken"]
-    if refresh == "" {
-        refresh = body["RefreshToken"]
-    }
-    if refresh == "" {
-        refresh = body["refresh_token"]
-    }
-    if refresh == "" {
-        http.Error(w, "Missing refresh token", http.StatusBadRequest)
-        return
-    }
+	var body map[string]string
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		http.Error(w, "Invalid JSON", http.StatusBadRequest)
+		return
+	}
+	defer r.Body.Close()
+	refresh := body["refreshToken"]
+	if refresh == "" {
+		refresh = body["RefreshToken"]
+	}
+	if refresh == "" {
+		refresh = body["refresh_token"]
+	}
+	if refresh == "" {
+		http.Error(w, "Missing refresh token", http.StatusBadRequest)
+		return
+	}
 
-    claims, err := utils.ValidateJWTToken(refresh)
-    if err != nil {
-        http.Error(w, "Invalid refresh token", http.StatusUnauthorized)
-        return
-    }
-    userIDFloat, ok := claims["userID"].(float64)
-    if !ok {
-        http.Error(w, "Invalid token claims", http.StatusUnauthorized)
-        return
-    }
-    username, ok := claims["username"].(string)
-    if !ok || username == "" {
-        http.Error(w, "Invalid token claims", http.StatusUnauthorized)
-        return
-    }
+	claims, err := utils.ValidateJWTToken(refresh)
+	if err != nil {
+		http.Error(w, "Invalid refresh token", http.StatusUnauthorized)
+		return
+	}
+	userIDFloat, ok := claims["userID"].(float64)
+	if !ok {
+		http.Error(w, "Invalid token claims", http.StatusUnauthorized)
+		return
+	}
+	username, ok := claims["username"].(string)
+	if !ok || username == "" {
+		http.Error(w, "Invalid token claims", http.StatusUnauthorized)
+		return
+	}
 
-    newAccess, err := utils.GenerateJWTToken(uint(userIDFloat), username)
-    if err != nil {
-        http.Error(w, "Error generating access token", http.StatusInternalServerError)
-        return
-    }
-    newRefresh, err := utils.GenerateRefreshToken(uint(userIDFloat), username)
-    if err != nil {
-        http.Error(w, "Error generating refresh token", http.StatusInternalServerError)
-        return
-    }
-    json.NewEncoder(w).Encode(map[string]any{
-        "Status":       "success",
-        "AccessToken":  newAccess,
-        "RefreshToken": newRefresh,
-    })
+	newAccess, err := utils.GenerateJWTToken(uint(userIDFloat), username)
+	if err != nil {
+		http.Error(w, "Error generating access token", http.StatusInternalServerError)
+		return
+	}
+	newRefresh, err := utils.GenerateRefreshToken(uint(userIDFloat), username)
+	if err != nil {
+		http.Error(w, "Error generating refresh token", http.StatusInternalServerError)
+		return
+	}
+	json.NewEncoder(w).Encode(map[string]any{
+		"Status":       "success",
+		"AccessToken":  newAccess,
+		"RefreshToken": newRefresh,
+	})
 }
-
 
 func UpdateUser(w http.ResponseWriter, r *http.Request) {
 	userID, ok := r.Context().Value("userID").(uint)
 
 	if !ok {
-		http.Error(w,"Unauthorized", http.StatusUnauthorized)
+		http.Error(w, "Unauthorized", http.StatusUnauthorized)
 		return
 	}
 
@@ -255,70 +270,70 @@ func UpdateUser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-    var userUpdate models.User
-    decoder := json.NewDecoder(r.Body)
-    encoder := json.NewEncoder(w)
+	var userUpdate models.User
+	decoder := json.NewDecoder(r.Body)
+	encoder := json.NewEncoder(w)
 
-    if err := decoder.Decode(&userUpdate); err != nil {
-        http.Error(w, "Invalid JSON", http.StatusBadRequest)
-        return
-    }
+	if err := decoder.Decode(&userUpdate); err != nil {
+		http.Error(w, "Invalid JSON", http.StatusBadRequest)
+		return
+	}
 
 	defer r.Body.Close()
-	
+
 	if userUpdate.Name == "" || userUpdate.Password == "" {
 		http.Error(w, "Missing attributes", http.StatusBadRequest)
 		return
 	}
-    user.Name = userUpdate.Name
+	user.Name = userUpdate.Name
 
-    hashedPassword, err := utils.HashPassword(userUpdate.Password)
-    if err != nil {
-        http.Error(w, "Error hashing password", http.StatusInternalServerError)
-        return
-    }
-    user.Password = hashedPassword
+	hashedPassword, err := utils.HashPassword(userUpdate.Password)
+	if err != nil {
+		http.Error(w, "Error hashing password", http.StatusInternalServerError)
+		return
+	}
+	user.Password = hashedPassword
 
 	config.DB.Save(&user)
 
-	encoder.Encode(map[string]interface{} {
+	encoder.Encode(map[string]interface{}{
 		"Status": "User Updated successfully",
-		"User": user,
+		"User":   user,
 	})
 }
 
 // admin actions
 func InviteUser(w http.ResponseWriter, r *http.Request) {
-    userIdent := r.PathValue("userId")
-    if userIdent == "" {
-        http.Error(w, "No valid user identifier provided", http.StatusBadRequest)
-        return
-    }
+	userIdent := r.PathValue("userId")
+	if userIdent == "" {
+		http.Error(w, "No valid user identifier provided", http.StatusBadRequest)
+		return
+	}
 
-    chatroomId := r.PathValue("id")
-    if chatroomId == "" {
-        http.Error(w, "No valid chatroom ID provided", http.StatusBadRequest)
-        return
-    }
+	chatroomId := r.PathValue("id")
+	if chatroomId == "" {
+		http.Error(w, "No valid chatroom ID provided", http.StatusBadRequest)
+		return
+	}
 
-    // Resolve user by numeric ID or by username
-    var userIdNum uint64
-    if idNum, err := strconv.ParseUint(userIdent, 10, 32); err == nil {
-        userIdNum = idNum
-    } else {
-        var u models.User
-        if err := config.DB.Where("name = ?", userIdent).First(&u).Error; err != nil {
-            http.Error(w, "Invalid user identifier: not found", http.StatusNotFound)
-            return
-        }
-        userIdNum = uint64(u.ID)
-    }
+	// Resolve user by numeric ID or by username
+	var userIdNum uint64
+	if idNum, err := strconv.ParseUint(userIdent, 10, 32); err == nil {
+		userIdNum = idNum
+	} else {
+		var u models.User
+		if err := config.DB.Where("name = ?", userIdent).First(&u).Error; err != nil {
+			http.Error(w, "Invalid user identifier: not found", http.StatusNotFound)
+			return
+		}
+		userIdNum = uint64(u.ID)
+	}
 
-    chatroomIdNum, err := strconv.ParseUint(chatroomId, 10, 32)
-    if err != nil {
-        http.Error(w, "Invalid chatroom ID, cannot convert to number", http.StatusBadRequest)
-        return
-    }
+	chatroomIdNum, err := strconv.ParseUint(chatroomId, 10, 32)
+	if err != nil {
+		http.Error(w, "Invalid chatroom ID, cannot convert to number", http.StatusBadRequest)
+		return
+	}
 
 	isAdmin := r.Context().Value("isAdmin").(bool)
 	if !isAdmin {
@@ -326,70 +341,182 @@ func InviteUser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-    var admin models.User
-    if err := config.DB.First(&admin, r.Context().Value("userID")).Error; err != nil {
-        http.Error(w, "Error fetching admin", http.StatusInternalServerError)
-        return
-    }
+	var admin models.User
+	if err := config.DB.First(&admin, r.Context().Value("userID")).Error; err != nil {
+		http.Error(w, "Error fetching admin", http.StatusInternalServerError)
+		return
+	}
+
+	var targetUser models.User
+	if err := config.DB.First(&targetUser, uint(userIdNum)).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			http.Error(w, "User not found", http.StatusNotFound)
+			return
+		}
+		http.Error(w, "Error fetching user", http.StatusInternalServerError)
+		return
+	}
 
 	var userChatroom models.UserChatroom
-    if err := config.DB.Where("user_id = ? AND chatroom_id = ?", userIdNum, chatroomIdNum).First(&userChatroom).Error; err != nil {
-        if errors.Is(err, gorm.ErrRecordNotFound) {
+	err = config.DB.Where("user_id = ? AND chatroom_id = ?", userIdNum, chatroomIdNum).First(&userChatroom).Error
+	expiration := time.Now().Add(7 * 24 * time.Hour) // invite expires in 7 days
 
-			exp_time := time.Now().Add(7 * 24 * time.Hour) // invite expires in 7 days
-			newUserChatroom := models.UserChatroom {
-                UserID:       uint(userIdNum),
-                ChatroomID:   uint(chatroomIdNum),
-                LastJoinTime: nil, 
-                IsInvited: true,
-                IsJoined: false,
-                InviteExpires: &exp_time,
-            }
-            if err := config.DB.Create(&newUserChatroom).Error; err != nil {
-                http.Error(w, "Error adding user to chatroom", http.StatusInternalServerError)
-                return
-            }
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			userChatroom = models.UserChatroom{
+				UserID:        targetUser.ID,
+				Name:          targetUser.Name,
+				ChatroomID:    uint(chatroomIdNum),
+				LastJoinTime:  nil,
+				IsInvited:     true,
+				IsJoined:      false,
+				InviteExpires: &expiration,
+			}
+			if err := config.DB.
+				Select("UserID", "Name", "ChatroomID", "LastJoinTime", "IsInvited", "IsJoined", "InviteExpires").
+				Create(&userChatroom).Error; err != nil {
+				http.Error(w, "Error creating user-chatroom association", http.StatusInternalServerError)
+				return
+			}
+		} else {
+			http.Error(w, "Error retrieving user-chatroom association", http.StatusInternalServerError)
+			return
+		}
+	} else {
+		if userChatroom.IsBanned {
+			http.Error(w, "user is banned from this chatroom", http.StatusBadRequest)
+			return
+		}
 
-        } else {
-            http.Error(w, "Error retrieving user-chatroom association", http.StatusInternalServerError)
-        }
-        return
-    }
+		if userChatroom.IsJoined {
+			http.Error(w, "user is already part of this chatroom", http.StatusBadRequest)
+			return
+		}
 
-	if userChatroom.IsBanned {
-		http.Error(w, "user is banned from this chatroom", http.StatusBadRequest)
-		return
+		userChatroom.Name = targetUser.Name
+		userChatroom.IsInvited = true
+		userChatroom.IsJoined = false
+		userChatroom.InviteExpires = &expiration
+
+		if err := config.DB.Save(&userChatroom).Error; err != nil {
+			http.Error(w, "Error saving user-chatroom association", http.StatusInternalServerError)
+			return
+		}
 	}
 
-	if userChatroom.IsJoined {
-		http.Error(w, "user is already part of this chatroom", http.StatusBadRequest)
-		return
+	notification := models.Notification{
+		UserId:     userChatroom.UserID,
+		ChatroomId: uint(chatroomIdNum),
+		Type:       "invite",
+		SenderId:   admin.ID,
+		Content:    fmt.Sprintf("You have been invited to a chatroom by user %s", admin.Name),
+		CreatedAt:  time.Now(),
+		UpdatedAt:  time.Now(),
+		ExpiresAt:  expiration,
 	}
-
-	exp_time := time.Now().Add(7 * 24 * time.Hour)
-	userChatroom.IsInvited = true
-	userChatroom.InviteExpires = &exp_time 
-
-	notification := models.Notification {
-		UserId:    userChatroom.UserID, 
-		Content:   fmt.Sprintf("You have been invited to a chatroom by user %s", admin.Name), 
-		CreatedAt: time.Now(),
-		UpdatedAt: time.Now(),
-		ExpiresAt: time.Now().Add(7 * 24 * time.Hour), // Set TTL to 7 days
-	}
-	if err := config.DB.Save(&notification).Error; err != nil {
+	if err := config.DB.Create(&notification).Error; err != nil {
 		http.Error(w, "Error saving notification", http.StatusInternalServerError)
 		return
 	}
 
-	if err := config.DB.Save(&userChatroom).Error; err != nil {
-		http.Error(w, "Error saving user-chatroom association", http.StatusInternalServerError)
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]any{
+		"Status":      "User invited to the chatroom",
+		"User status": userChatroom,
+	})
+}
+
+func AcceptInvite(w http.ResponseWriter, r *http.Request) {
+	userID, ok := r.Context().Value("userID").(uint)
+	if !ok || userID == 0 {
+		http.Error(w, "Unauthorized", http.StatusUnauthorized)
+		return
+	}
+	username, ok := r.Context().Value("username").(string)
+	if !ok || username == "" {
+		http.Error(w, "Unauthorized", http.StatusUnauthorized)
 		return
 	}
 
-	json.NewEncoder(w).Encode(map[string]interface{} {
-		"Status": "User Invited to the chatroom",
-		"User status": userChatroom,
+	membershipIDStr := r.PathValue("membershipId")
+	if membershipIDStr == "" {
+		http.Error(w, "No valid invite ID provided", http.StatusBadRequest)
+		return
+	}
+	membershipID, err := strconv.ParseUint(membershipIDStr, 10, 64)
+	if err != nil {
+		http.Error(w, "Invalid invite ID", http.StatusBadRequest)
+		return
+	}
+
+	var membership models.UserChatroom
+	if err := config.DB.First(&membership, membershipID).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			http.Error(w, "Invitation not found", http.StatusNotFound)
+		} else {
+			http.Error(w, "Error retrieving invitation", http.StatusInternalServerError)
+		}
+		return
+	}
+
+	if membership.UserID != userID {
+		http.Error(w, "Invitation does not belong to user", http.StatusForbidden)
+		return
+	}
+
+	var chatroom models.Chatroom
+	if err := config.DB.First(&chatroom, membership.ChatroomID).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			http.Error(w, "Chatroom not found", http.StatusNotFound)
+		} else {
+			http.Error(w, "Error retrieving chatroom", http.StatusInternalServerError)
+		}
+		return
+	}
+
+	if membership.IsBanned {
+		http.Error(w, "You are banned from this chatroom", http.StatusForbidden)
+		return
+	}
+
+	if membership.IsJoined {
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]any{
+			"Status":     "Already joined",
+			"Chatroom":   chatroom,
+			"Membership": membership,
+		})
+		return
+	}
+
+	now := time.Now()
+	if membership.InviteExpires != nil && membership.InviteExpires.Before(now) {
+		http.Error(w, "Invitation has expired", http.StatusForbidden)
+		return
+	}
+
+	if !chatroom.IsPublic && !membership.IsInvited {
+		http.Error(w, "Invitation is no longer valid", http.StatusForbidden)
+		return
+	}
+
+	membership.Name = username
+	membership.IsInvited = false
+	membership.IsJoined = true
+	membership.LastJoinTime = &now
+
+	if err := config.DB.Save(&membership).Error; err != nil {
+		http.Error(w, "Error updating membership", http.StatusInternalServerError)
+		return
+	}
+
+	utils.MembershipCache.Delete(fmt.Sprintf("membership:%v:%v", userID, chatroom.Id))
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]any{
+		"Status":     "Joined chatroom via invite",
+		"Chatroom":   chatroom,
+		"Membership": membership,
 	})
 }
 
@@ -434,8 +561,19 @@ func KickUser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	json.NewEncoder(w).Encode(map[string]interface{} {
-		"Status": "User kicked",
+	// notify kicked user
+	_ = config.DB.Create(&models.Notification{
+		UserId:     userChatroom.UserID,
+		ChatroomId: userChatroom.ChatroomID,
+		Type:       "kick",
+		SenderId:   r.Context().Value("userID").(uint),
+		Content:    fmt.Sprintf("You have been kicked from chatroom %s", chatroomId),
+		CreatedAt:  time.Now(),
+		UpdatedAt:  time.Now(),
+	}).Error
+
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"Status":      "User kicked",
 		"User status": userChatroom,
 	})
 }
@@ -476,7 +614,7 @@ func BanUser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	userChatroom.IsBanned = true 
+	userChatroom.IsBanned = true
 	userChatroom.IsInvited = false
 	userChatroom.IsJoined = false
 
@@ -485,10 +623,20 @@ func BanUser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	json.NewEncoder(w).Encode(map[string]interface{} {
-		"Status": "User banned mn gher matrood!",
+	// notify banned user
+	_ = config.DB.Create(&models.Notification{
+		UserId:     userChatroom.UserID,
+		ChatroomId: userChatroom.ChatroomID,
+		Type:       "ban",
+		SenderId:   r.Context().Value("userID").(uint),
+		Content:    fmt.Sprintf("You have been banned from chatroom %s", chatroomId),
+		CreatedAt:  time.Now(),
+		UpdatedAt:  time.Now(),
+	}).Error
+
+	json.NewEncoder(w).Encode(map[string]any{
+		"Status":      "User banned mn gher matrood!",
 		"User status": userChatroom,
 	})
 
 }
-

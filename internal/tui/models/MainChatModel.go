@@ -82,23 +82,26 @@ type MainChatModel struct {
 }
 
 func NewMainChatModel(username string, userID uint, apiClient *client.APIClient) MainChatModel {
-	userChatroomsData, err := apiClient.GetUserChatrooms()
-	if err != nil {
-		panic(err)
-	}
-	publicChatroomsData, err := apiClient.GetChatrooms()
-	if err != nil {
-		panic(err)
+	userItems := []list.Item{}
+	publicItems := []list.Item{}
+	loadErrors := []string{}
+
+	if userChatroomsData, err := apiClient.GetUserChatrooms(); err != nil {
+		loadErrors = append(loadErrors, fmt.Sprintf("Your chatrooms unavailable: %s", err.Error()))
+	} else {
+		userItems = make([]list.Item, len(userChatroomsData))
+		for i, c := range userChatroomsData {
+			userItems[i] = chatroomItem{chatroom: c, isMember: true}
+		}
 	}
 
-	userItems := make([]list.Item, len(userChatroomsData))
-	for i, c := range userChatroomsData {
-		userItems[i] = chatroomItem{chatroom: c, isMember: true}
-	}
-
-	publicItems := make([]list.Item, len(publicChatroomsData))
-	for i, c := range publicChatroomsData {
-		publicItems[i] = chatroomItem{chatroom: c, isMember: false}
+	if publicChatroomsData, err := apiClient.GetChatrooms(); err != nil {
+		loadErrors = append(loadErrors, fmt.Sprintf("Discover feed unavailable: %s", err.Error()))
+	} else {
+		publicItems = make([]list.Item, len(publicChatroomsData))
+		for i, c := range publicChatroomsData {
+			publicItems[i] = chatroomItem{chatroom: c, isMember: false}
+		}
 	}
 
 	delegate := NewChatroomDelegate()
@@ -119,6 +122,13 @@ func NewMainChatModel(username string, userID uint, apiClient *client.APIClient)
 	publicList.SetFilteringEnabled(true)
 	publicList.DisableQuitKeybindings()
 
+	flashMessage := ""
+	flashStyle := styles.StatusInfoStyle
+	if len(loadErrors) > 0 {
+		flashMessage = strings.Join(loadErrors, " | ")
+		flashStyle = styles.StatusErrorStyle
+	}
+
 	return MainChatModel{
 		apiClient:       apiClient,
 		userID:          userID,
@@ -126,7 +136,8 @@ func NewMainChatModel(username string, userID uint, apiClient *client.APIClient)
 		userChatrooms:   userList,
 		publicChatrooms: publicList,
 		activeList:      0,
-		flashStyle:      styles.StatusInfoStyle,
+		flashMessage:    flashMessage,
+		flashStyle:      flashStyle,
 	}
 }
 
@@ -166,11 +177,17 @@ func (m MainChatModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "c":
 			// create new chatroom
 			return NewCreateChatroomModel(m.username, m.userID, m.apiClient), nil
+		case "ctrl+j":
+			// open modal to join by ID
+			jm := NewJoinChatroomModal(m.apiClient, m)
+			return jm, jm.Init()
+		case "n":
+			nm := NewNotificationsModel(m.username, m.userID, m.apiClient)
+			return nm, loadNotifications(m.apiClient)
 		case "enter":
 			if m.activeList == 0 {
 				if item, ok := m.userChatrooms.SelectedItem().(chatroomItem); ok {
-					chatroomModel := NewChatroomModel(m.username, m.userID, item.chatroom, m.apiClient)
-					return chatroomModel, chatroomModel.Init()
+					return NewChatroomModel(m.username, m.userID, item.chatroom, m.apiClient), nil
 				}
 			} else {
 				if item, ok := m.publicChatrooms.SelectedItem().(chatroomItem); ok {
@@ -179,8 +196,7 @@ func (m MainChatModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 						m.flashStyle = styles.StatusErrorStyle
 						return m, nil
 					}
-					chatroomModel := NewChatroomModel(m.username, m.userID, item.chatroom, m.apiClient)
-					return chatroomModel, chatroomModel.Init()
+					return NewChatroomModel(m.username, m.userID, item.chatroom, m.apiClient), nil
 				}
 			}
 		case "q", "ctrl+c":
@@ -229,7 +245,9 @@ func (m MainChatModel) View() string {
 	helpItems := []string{
 		styles.RenderKeyBinding("Tab", "Switch pane"),
 		styles.RenderKeyBinding("Enter", "Open or join"),
+		styles.RenderKeyBinding("Ctrl+J", "Join by ID"),
 		styles.RenderKeyBinding("L", "Log out"),
+		styles.RenderKeyBinding("n", "Notifications"),
 		styles.RenderKeyBinding("q", "Quit"),
 		styles.RenderKeyBinding("c", "Create a chatroom"),
 	}

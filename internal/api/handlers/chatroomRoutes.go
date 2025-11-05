@@ -1,17 +1,18 @@
 package handlers
 
 import (
-    "encoding/json"
-    "errors"
-    "fmt"
-    "net/http"
-    "time"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"net/http"
+	"time"
 
-    "github.com/Wal-20/cli-chat-app/internal/config"
-    "github.com/Wal-20/cli-chat-app/internal/models"
-    "github.com/Wal-20/cli-chat-app/internal/utils"
-    "gorm.io/gorm"
+	"github.com/Wal-20/cli-chat-app/internal/config"
+	"github.com/Wal-20/cli-chat-app/internal/models"
+	"github.com/Wal-20/cli-chat-app/internal/utils"
+	"gorm.io/gorm"
 )
+
 func GetChatrooms(w http.ResponseWriter, r *http.Request) {
 	encoder := json.NewEncoder(w)
 	id := r.URL.Query().Get("id")
@@ -46,19 +47,19 @@ func GetChatrooms(w http.ResponseWriter, r *http.Request) {
 
 func GetPublicChatrooms(w http.ResponseWriter, r *http.Request) {
 
-    userID, ok := r.Context().Value("userID").(uint)
-    if !ok || userID == 0 {
-        http.Error(w, "Unauthorized: missing or invalid user ID", http.StatusUnauthorized)
-        return
-    }
+	userID, ok := r.Context().Value("userID").(uint)
+	if !ok || userID == 0 {
+		http.Error(w, "Unauthorized: missing or invalid user ID", http.StatusUnauthorized)
+		return
+	}
 
-    encoder := json.NewEncoder(w)
-    chatrooms, err := Svcs.Chat.GetPublicChatrooms(userID)
-    if err != nil {
-        http.Error(w, "Failed to retrieve chatrooms", http.StatusInternalServerError)
-        return
-    }
-    encoder.Encode(map[string]interface{}{"Chatrooms": chatrooms})
+	encoder := json.NewEncoder(w)
+	chatrooms, err := Svcs.Chat.GetPublicChatrooms(userID)
+	if err != nil {
+		http.Error(w, "Failed to retrieve chatrooms", http.StatusInternalServerError)
+		return
+	}
+	encoder.Encode(map[string]interface{}{"Chatrooms": chatrooms})
 
 }
 
@@ -78,12 +79,11 @@ func GetUsersByChatroom(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-    // Match client expectation key: userChatroom
-    encoder.Encode(map[string]interface{}{
-        "userChatroom": userChatrooms,
-    })
+	// Match client expectation key: userChatroom
+	encoder.Encode(map[string]interface{}{
+		"userChatroom": userChatrooms,
+	})
 }
-
 
 func GetMessagesByChatroom(w http.ResponseWriter, r *http.Request) {
 	chatroomId := r.PathValue("id")
@@ -117,7 +117,6 @@ func GetMessagesByChatroom(w http.ResponseWriter, r *http.Request) {
 		"Messages": messages,
 	})
 }
-
 
 func CreateChatroom(w http.ResponseWriter, r *http.Request) {
 	userID, ok := r.Context().Value("userID").(uint)
@@ -181,7 +180,9 @@ func CreateChatroom(w http.ResponseWriter, r *http.Request) {
 	if requestBody.RecipientID != 0 {
 		userChatrooms = append(userChatrooms, models.UserChatroom{UserID: requestBody.RecipientID, Name: users[1].Name, ChatroomID: newChatRoom.Id, IsJoined: false, LastJoinTime: &now})
 	}
-	if err := config.DB.Create(&userChatrooms).Error; err != nil {
+	if err := config.DB.
+		Select("UserID", "Name", "ChatroomID", "IsJoined", "IsAdmin", "IsOwner", "LastJoinTime").
+		Create(&userChatrooms).Error; err != nil {
 		http.Error(w, "Failed to link users to chatroom", http.StatusInternalServerError)
 		return
 	}
@@ -252,62 +253,61 @@ func JoinChatroom(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-    var chatroom models.Chatroom
-    if err := config.DB.First(&chatroom, chatroomID).Error; err != nil {
-        if errors.Is(err, gorm.ErrRecordNotFound) {
-            http.Error(w, "Chatroom not found", http.StatusNotFound)
-        } else {
-            http.Error(w, "Error retrieving chatroom", http.StatusInternalServerError)
-        }
-        return
-    }
-    // delegate to service to handle join/create membership (idempotent)
-    if _, err := Svcs.Chat.JoinChatroom(userID, username, chatroomID); err != nil {
-        http.Error(w, "Error adding user to chatroom", http.StatusInternalServerError)
-        return
-    }
+	var chatroom models.Chatroom
+	if err := config.DB.First(&chatroom, chatroomID).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			http.Error(w, "Chatroom not found", http.StatusNotFound)
+		} else {
+			http.Error(w, "Error retrieving chatroom", http.StatusInternalServerError)
+		}
+		return
+	}
+	// delegate to service to handle join/create membership (idempotent)
+	if _, err := Svcs.Chat.JoinChatroom(userID, username, chatroomID); err != nil {
+		http.Error(w, "Error adding user to chatroom", http.StatusInternalServerError)
+		return
+	}
 
-    // reload membership for checks
-    var userChatroom models.UserChatroom
-    if err := config.DB.Where("user_id = ? AND chatroom_id = ?", userID, chatroom.Id).First(&userChatroom).Error; err == nil {
-        if userChatroom.IsBanned {
-            http.Error(w, "You are banned from this chatroom", http.StatusForbidden)
-            return
-        }
-        if userChatroom.IsJoined {
-            // already joined; return success idempotently
-            w.Header().Set("Content-Type", "application/json")
-            json.NewEncoder(w).Encode(map[string]any{
-                "Status":   "Already in chatroom",
-                "Chatroom": chatroom,
-            })
-            return
-        }
-    }
+	// reload membership for checks
+	var userChatroom models.UserChatroom
+	if err := config.DB.Where("user_id = ? AND chatroom_id = ?", userID, chatroom.Id).First(&userChatroom).Error; err == nil {
+		if userChatroom.IsBanned {
+			http.Error(w, "You are banned from this chatroom", http.StatusForbidden)
+			return
+		}
+		if userChatroom.IsJoined {
+			// already joined; return success idempotently
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(map[string]any{
+				"Status":   "Already in chatroom",
+				"Chatroom": chatroom,
+			})
+			return
+		}
+	}
 
-    now := time.Now()
-    if !chatroom.IsPublic {
-        if userChatroom.IsInvited && userChatroom.InviteExpires.After(now) {
-            userChatroom.IsInvited = false
-        } else {
-            http.Error(w, "You are not invited to this chatroom, or invitation has expired.", http.StatusForbidden)
-            return
-        }
-    }
+	now := time.Now()
+	if !chatroom.IsPublic {
+		if !userChatroom.IsInvited || userChatroom.InviteExpires.Before(now) {
+			http.Error(w, "You are not invited to this chatroom, or invitation has expired.", http.StatusForbidden)
+			return
+		}
+	}
 
-    userChatroom.IsJoined = true
-    userChatroom.LastJoinTime = &now
+	userChatroom.IsJoined = true
+	userChatroom.IsInvited = false
+	userChatroom.LastJoinTime = &now
 
-    if err := config.DB.Save(&userChatroom).Error; err != nil {
-        http.Error(w, "Error updating user-chatroom association", http.StatusInternalServerError)
-        return
-    }
+	if err := config.DB.Save(&userChatroom).Error; err != nil {
+		http.Error(w, "Error updating user-chatroom association", http.StatusInternalServerError)
+		return
+	}
 
 	w.Header().Set("Content-Type", "application/json")
-    json.NewEncoder(w).Encode(map[string]interface{}{
-        "Status":   "User added to chatroom successfully",
-        "Chatroom": chatroom,
-    })
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"Status":   "User added to chatroom successfully",
+		"Chatroom": chatroom,
+	})
 
 }
 
@@ -345,18 +345,42 @@ func transferOwnership(chatroomId string) error {
 		Update("owner_id", newOwner.UserID).Error
 }
 
-
 func LeaveChatroom(w http.ResponseWriter, r *http.Request) {
-    userId := r.Context().Value("userID").(uint)
-    chatroomId := r.PathValue("id")
+	userId := r.Context().Value("userID").(uint)
+	chatroomId := r.PathValue("id")
 
-    utils.MembershipCache.Delete(fmt.Sprintf("membership:%v:%s", userId, chatroomId))
-    wasOwner := false // best-effort; can enhance by loading membership
-    res, err := Svcs.Chat.LeaveChatroom(userId, chatroomId, wasOwner)
-    if err != nil {
-        http.Error(w, err.Error(), http.StatusBadRequest)
-        return
-    }
-    json.NewEncoder(w).Encode(res)
+	cacheKey := fmt.Sprintf("membership:%v:%s", userId, chatroomId)
+	utils.MembershipCache.Delete(cacheKey)
+
+	var membership models.UserChatroom
+	if err := config.DB.Where("user_id = ? AND chatroom_id = ?", userId, chatroomId).First(&membership).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			http.Error(w, "You are not a member of this chatroom", http.StatusNotFound)
+			return
+		}
+		http.Error(w, "Error retrieving membership", http.StatusInternalServerError)
+		return
+	}
+
+	wasOwner := membership.IsOwner
+
+	res, err := Svcs.Chat.LeaveChatroom(userId, chatroomId, wasOwner)
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			http.Error(w, "You are not a member of this chatroom", http.StatusNotFound)
+			return
+		}
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	if wasOwner {
+		if err := transferOwnership(chatroomId); err != nil {
+			http.Error(w, "Failed to transfer ownership after leave", http.StatusInternalServerError)
+			return
+		}
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(res)
 }
-

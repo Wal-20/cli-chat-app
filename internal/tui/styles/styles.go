@@ -80,6 +80,9 @@ var (
 	InputTextFocusedStyle   = lipgloss.NewStyle()
 	InputPlaceholderStyle   = lipgloss.NewStyle().Foreground(textMutedColor)
 
+	// Modals
+	ModalInputStyle = lipgloss.NewStyle().Foreground(primaryColor).Align(lipgloss.Center)
+
 	// Buttons simplified
 	ButtonStyle        = lipgloss.NewStyle()
 	ButtonFocusedStyle = lipgloss.NewStyle().Bold(true)

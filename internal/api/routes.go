@@ -3,11 +3,10 @@ package api
 import (
 	"encoding/json"
 	"fmt"
-	"log"
-	"net/http"
-
 	"github.com/Wal-20/cli-chat-app/internal/api/handlers"
 	"github.com/Wal-20/cli-chat-app/internal/api/middleware"
+	"log"
+	"net/http"
 )
 
 func NewServer() {
@@ -37,6 +36,8 @@ func NewServer() {
 	mux.HandleFunc("POST /api/users/refresh", handlers.RefreshToken)
 	mux.Handle("POST /api/users/update", middleware.AuthMiddleware(http.HandlerFunc(handlers.UpdateUser)))
 	mux.Handle("GET /api/users/chatrooms", middleware.AuthMiddleware(http.HandlerFunc(handlers.GetChatroomsByUser)))
+	mux.Handle("GET /api/users/notifications", middleware.AuthMiddleware(http.HandlerFunc(handlers.GetNotifications)))
+	mux.Handle("POST /api/users/invitations/{membershipId}/accept", middleware.AuthMiddleware(http.HandlerFunc(handlers.AcceptInvite)))
 
 	//admin routes
 	mux.Handle("POST /api/users/chatrooms/{id}/invite/{userId}", middleware.AuthMiddleware(

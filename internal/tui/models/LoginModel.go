@@ -1,16 +1,16 @@
 package models
 
 import (
-    "fmt"
-    "strings"
+	"fmt"
+	"strings"
 
-    "github.com/Wal-20/cli-chat-app/internal/tui/client"
-    "github.com/Wal-20/cli-chat-app/internal/tui/styles"
-    "github.com/Wal-20/cli-chat-app/internal/utils"
-    "github.com/charmbracelet/bubbles/cursor"
-    "github.com/charmbracelet/bubbles/textinput"
-    tea "github.com/charmbracelet/bubbletea"
-    "github.com/charmbracelet/lipgloss"
+	"github.com/Wal-20/cli-chat-app/internal/tui/client"
+	"github.com/Wal-20/cli-chat-app/internal/tui/styles"
+	"github.com/Wal-20/cli-chat-app/internal/utils"
+	"github.com/charmbracelet/bubbles/cursor"
+	"github.com/charmbracelet/bubbles/textinput"
+	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
 )
 
 type LoginModel struct {
@@ -154,7 +154,7 @@ func (m LoginModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, m.applyFocusStyles()
 		}
 
-        m.apiClient.SetToken(msg.token)
+		m.apiClient.SetToken(msg.token)
 		return NewMainChatModel(msg.username, msg.userID, m.apiClient), nil
 	}
 
@@ -234,47 +234,46 @@ func (m LoginModel) View() string {
 	content := strings.Join(sections, "\n\n")
 	card := styles.CardStyle.Render(content)
 
-    if m.width > 0 && m.height > 0 {
-        card = lipgloss.Place(
-            m.width,
-            m.height,
-            lipgloss.Center,
-            lipgloss.Center,
-            card,
-        )
-        return styles.AppStyle.Copy().Width(m.width).Height(m.height).Render(card)
-    }
+	if m.width > 0 && m.height > 0 {
+		card = lipgloss.Place(
+			m.width,
+			m.height,
+			lipgloss.Center,
+			lipgloss.Center,
+			card,
+		)
+		return styles.AppStyle.Copy().Width(m.width).Height(m.height).Render(card)
+	}
 
 	return styles.AppStyle.Render(card)
 }
 
 func login(apiClient *client.APIClient, username, password string) tea.Cmd {
-    return func() tea.Msg {
-        res, err := apiClient.LoginOrRegister(username, password)
-        if err != nil {
-            return loginResultMsg{err: err}
-        }
+	return func() tea.Msg {
+		if err := utils.ValidatePassword(password); err != nil {
+			return loginResultMsg{err: err}
+		}
+		res, err := apiClient.LoginOrRegister(username, password)
+		if err != nil {
+			return loginResultMsg{err: err}
+		}
 
-        token, ok := res["AccessToken"].(string)
-        if !ok || token == "" {
-            return loginResultMsg{err: fmt.Errorf("authentication failed: missing access token")}
-        }
+		token, ok := res["AccessToken"].(string)
+		if !ok || token == "" {
+			return loginResultMsg{err: fmt.Errorf("authentication failed: missing access token")}
+		}
 
-        // Persist token pair locally and hydrate client for future requests
-        refresh, _ := res["RefreshToken"].(string)
-        _ = utils.SaveTokenPair(utils.TokenPair{AccessToken: token, RefreshToken: refresh})
-        apiClient.SetTokenPair(token, refresh)
-        // Extract user ID from access token claims
-        var uid uint
-        if claims, err2 := utils.GetClaimsFromToken(token); err2 == nil {
-            if idf, ok := claims["userID"].(float64); ok {
-                uid = uint(idf)
-            }
-        }
-        return loginResultMsg{username: username, token: token, userID: uid}
-    }
+		// Persist token pair locally and hydrate client for future requests
+		refresh, _ := res["RefreshToken"].(string)
+		_ = utils.SaveTokenPair(utils.TokenPair{AccessToken: token, RefreshToken: refresh})
+		apiClient.SetTokenPair(token, refresh)
+		// Extract user ID from access token claims
+		var uid uint
+		if claims, err2 := utils.GetClaimsFromToken(token); err2 == nil {
+			if idf, ok := claims["userID"].(float64); ok {
+				uid = uint(idf)
+			}
+		}
+		return loginResultMsg{username: username, token: token, userID: uid}
+	}
 }
-
-
-
-
