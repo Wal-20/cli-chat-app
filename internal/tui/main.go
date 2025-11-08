@@ -26,7 +26,11 @@ func (m mainModel) View() string {
 func main() {
 	apiClient, err := client.NewAPIClient()
 	if err != nil {
-		panic(err)
+		// If we cannot reach the server, show a friendly message instead of crashing
+		down := models.NewServerDownModel()
+		program := tea.NewProgram(mainModel{currentModel: down}, tea.WithAltScreen())
+		_, _ = program.Run()
+		return
 	}
 
 	var currentModel tea.Model
@@ -55,7 +59,5 @@ func main() {
 	}
 
 	program := tea.NewProgram(mainModel{currentModel: currentModel}, tea.WithAltScreen())
-	if _, err := program.Run(); err != nil {
-		panic(err)
-	}
+	_, _ = program.Run()
 }

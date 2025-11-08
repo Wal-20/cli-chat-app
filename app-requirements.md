@@ -44,5 +44,4 @@ Provide informative feedback to users when they perform invalid actions (e.g., t
 
 - Fix issue where user who just registered can't perform actions like creating chatrooms as server cannot detect new user for some reason, test for other actions
 - Implement unique field constraints for models such as chatroom titles, user names
-- Delete invite notification after joining
 
