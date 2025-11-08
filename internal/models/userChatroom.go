@@ -11,7 +11,7 @@ type UserChatroom struct {
 	ChatroomID    uint       `gorm:"not null;index:idx_user_chatroom,unique" json:"chatroom_id"`
 	IsAdmin       bool       `gorm:"default:false" json:"is_admin"`
 	IsOwner       bool       `gorm:"default:false" json:"is_owner"`
-	IsJoined      bool       `gorm:"default:true" json:"is_joined"`
+	IsJoined      bool       `gorm:"default:false" json:"is_joined"`
 	IsBanned      bool       `gorm:"default:false" json:"is_banned"`
 	LastJoinTime  *time.Time `gorm:"autoUpdateTime" json:"last_join_time"`
 	IsInvited     bool       `gorm:"default:false" json:"is_invited"`

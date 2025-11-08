@@ -1,7 +1,6 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-
 NO_SOURCE=false
 for arg in "$@"; do
     case "$arg" in

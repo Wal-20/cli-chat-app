@@ -292,7 +292,7 @@ func (m ChatroomModel) View() string {
 	helpItems := []string{
 		styles.RenderKeyBinding("Esc", "Back"),
 		styles.RenderKeyBinding("Enter", "Send"),
-		styles.RenderKeyBinding("Ctrl+O", "Invite User"),
+		styles.RenderKeyBinding("Ctrl + o", "Invite User"),
 		styles.RenderKeyBinding("Ctrl + c", "Quit"),
 	}
 	help := strings.Join(helpItems, styles.HelpStyle.Render("  "))

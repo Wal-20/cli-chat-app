@@ -2,7 +2,6 @@ package ws
 
 import (
 	"encoding/json"
-	"fmt"
 	"log"
 	"net/http"
 	"strconv"
@@ -148,7 +147,6 @@ func ServeChatroomWS(w http.ResponseWriter, r *http.Request) {
 	room := GetRoom(uint(id64))
 	client := &Client{room: room, conn: conn, send: make(chan []byte, 256)}
 	room.register <- client
-	fmt.Printf("Registered Room %v", uint(id64))
 
 	go client.writePump()
 	client.readPump()

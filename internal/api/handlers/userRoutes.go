@@ -49,9 +49,7 @@ func GetUsers(w http.ResponseWriter, r *http.Request) {
 			encoder.Encode(map[string]any{"Message": "Failed to retrieve users"})
 			return
 		}
-
 		encoder.Encode(map[string]any{"Users": users})
-
 	}
 }
 
@@ -296,7 +294,7 @@ func UpdateUser(w http.ResponseWriter, r *http.Request) {
 
 	config.DB.Save(&user)
 
-	encoder.Encode(map[string]interface{}{
+	encoder.Encode(map[string]any{
 		"Status": "User Updated successfully",
 		"User":   user,
 	})
@@ -359,7 +357,7 @@ func InviteUser(w http.ResponseWriter, r *http.Request) {
 
 	var userChatroom models.UserChatroom
 	err = config.DB.Where("user_id = ? AND chatroom_id = ?", userIdNum, chatroomIdNum).First(&userChatroom).Error
-	expiration := time.Now().Add(7 * 24 * time.Hour) // invite expires in 7 days
+	expiration := time.Now().Add(7 * 24 * time.Hour) // 7 days
 
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
@@ -373,7 +371,6 @@ func InviteUser(w http.ResponseWriter, r *http.Request) {
 				InviteExpires: &expiration,
 			}
 			if err := config.DB.
-				Select("UserID", "Name", "ChatroomID", "LastJoinTime", "IsInvited", "IsJoined", "InviteExpires").
 				Create(&userChatroom).Error; err != nil {
 				http.Error(w, "Error creating user-chatroom association", http.StatusInternalServerError)
 				return
@@ -404,12 +401,18 @@ func InviteUser(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	var chatroom models.Chatroom
+	if err := config.DB.Select("title").Where("id = ?", chatroomIdNum).First(&chatroom).Error; err != nil {
+		http.Error(w, "Error fetching chatroom info", http.StatusInternalServerError)
+		return
+	}
+
 	notification := models.Notification{
 		UserId:     userChatroom.UserID,
 		ChatroomId: uint(chatroomIdNum),
 		Type:       "invite",
 		SenderId:   admin.ID,
-		Content:    fmt.Sprintf("You have been invited to a chatroom by user %s", admin.Name),
+		Content:    fmt.Sprintf("You have been invited to join '%s' by %s", chatroom.Title, admin.Name),
 		CreatedAt:  time.Now(),
 		UpdatedAt:  time.Now(),
 		ExpiresAt:  expiration,
@@ -423,100 +426,6 @@ func InviteUser(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(map[string]any{
 		"Status":      "User invited to the chatroom",
 		"User status": userChatroom,
-	})
-}
-
-func AcceptInvite(w http.ResponseWriter, r *http.Request) {
-	userID, ok := r.Context().Value("userID").(uint)
-	if !ok || userID == 0 {
-		http.Error(w, "Unauthorized", http.StatusUnauthorized)
-		return
-	}
-	username, ok := r.Context().Value("username").(string)
-	if !ok || username == "" {
-		http.Error(w, "Unauthorized", http.StatusUnauthorized)
-		return
-	}
-
-	membershipIDStr := r.PathValue("membershipId")
-	if membershipIDStr == "" {
-		http.Error(w, "No valid invite ID provided", http.StatusBadRequest)
-		return
-	}
-	membershipID, err := strconv.ParseUint(membershipIDStr, 10, 64)
-	if err != nil {
-		http.Error(w, "Invalid invite ID", http.StatusBadRequest)
-		return
-	}
-
-	var membership models.UserChatroom
-	if err := config.DB.First(&membership, membershipID).Error; err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			http.Error(w, "Invitation not found", http.StatusNotFound)
-		} else {
-			http.Error(w, "Error retrieving invitation", http.StatusInternalServerError)
-		}
-		return
-	}
-
-	if membership.UserID != userID {
-		http.Error(w, "Invitation does not belong to user", http.StatusForbidden)
-		return
-	}
-
-	var chatroom models.Chatroom
-	if err := config.DB.First(&chatroom, membership.ChatroomID).Error; err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			http.Error(w, "Chatroom not found", http.StatusNotFound)
-		} else {
-			http.Error(w, "Error retrieving chatroom", http.StatusInternalServerError)
-		}
-		return
-	}
-
-	if membership.IsBanned {
-		http.Error(w, "You are banned from this chatroom", http.StatusForbidden)
-		return
-	}
-
-	if membership.IsJoined {
-		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(map[string]any{
-			"Status":     "Already joined",
-			"Chatroom":   chatroom,
-			"Membership": membership,
-		})
-		return
-	}
-
-	now := time.Now()
-	if membership.InviteExpires != nil && membership.InviteExpires.Before(now) {
-		http.Error(w, "Invitation has expired", http.StatusForbidden)
-		return
-	}
-
-	if !chatroom.IsPublic && !membership.IsInvited {
-		http.Error(w, "Invitation is no longer valid", http.StatusForbidden)
-		return
-	}
-
-	membership.Name = username
-	membership.IsInvited = false
-	membership.IsJoined = true
-	membership.LastJoinTime = &now
-
-	if err := config.DB.Save(&membership).Error; err != nil {
-		http.Error(w, "Error updating membership", http.StatusInternalServerError)
-		return
-	}
-
-	utils.MembershipCache.Delete(fmt.Sprintf("membership:%v:%v", userID, chatroom.Id))
-
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]any{
-		"Status":     "Joined chatroom via invite",
-		"Chatroom":   chatroom,
-		"Membership": membership,
 	})
 }
 
@@ -561,7 +470,6 @@ func KickUser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// notify kicked user
 	_ = config.DB.Create(&models.Notification{
 		UserId:     userChatroom.UserID,
 		ChatroomId: userChatroom.ChatroomID,
@@ -572,7 +480,7 @@ func KickUser(w http.ResponseWriter, r *http.Request) {
 		UpdatedAt:  time.Now(),
 	}).Error
 
-	json.NewEncoder(w).Encode(map[string]interface{}{
+	json.NewEncoder(w).Encode(map[string]any{
 		"Status":      "User kicked",
 		"User status": userChatroom,
 	})
@@ -623,7 +531,6 @@ func BanUser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// notify banned user
 	_ = config.DB.Create(&models.Notification{
 		UserId:     userChatroom.UserID,
 		ChatroomId: userChatroom.ChatroomID,

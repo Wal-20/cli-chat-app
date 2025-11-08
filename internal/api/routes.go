@@ -37,7 +37,6 @@ func NewServer() {
 	mux.Handle("POST /api/users/update", middleware.AuthMiddleware(http.HandlerFunc(handlers.UpdateUser)))
 	mux.Handle("GET /api/users/chatrooms", middleware.AuthMiddleware(http.HandlerFunc(handlers.GetChatroomsByUser)))
 	mux.Handle("GET /api/users/notifications", middleware.AuthMiddleware(http.HandlerFunc(handlers.GetNotifications)))
-	mux.Handle("POST /api/users/invitations/{membershipId}/accept", middleware.AuthMiddleware(http.HandlerFunc(handlers.AcceptInvite)))
 
 	//admin routes
 	mux.Handle("POST /api/users/chatrooms/{id}/invite/{userId}", middleware.AuthMiddleware(
@@ -74,15 +73,6 @@ func NewServer() {
 		),
 	))
 
-	// WebSocket routes
-	mux.Handle("GET /api/chatrooms/{id}/ws",
-		middleware.AuthMiddleware(
-			middleware.ChatroomMiddleware(
-				http.HandlerFunc(handlers.ChatroomWebSocket),
-			),
-		),
-	)
-
 	// Message routes
 	mux.Handle("POST /api/chatrooms/{id}/messages",
 		middleware.AuthMiddleware(
@@ -102,6 +92,22 @@ func NewServer() {
 		middleware.AuthMiddleware(
 			middleware.ChatroomMiddleware(
 				http.HandlerFunc(handlers.UpdateMessage),
+			),
+		),
+	)
+
+	// Notification routes
+	mux.Handle("DELETE /api/notifications/{id}",
+		middleware.AuthMiddleware(
+			http.HandlerFunc(handlers.DeleteNotification),
+		),
+	)
+
+	// WebSocket routes
+	mux.Handle("GET /api/chatrooms/{id}/ws",
+		middleware.AuthMiddleware(
+			middleware.ChatroomMiddleware(
+				http.HandlerFunc(handlers.ChatroomWebSocket),
 			),
 		),
 	)

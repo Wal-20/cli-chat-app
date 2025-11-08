@@ -220,6 +220,14 @@ func (c *APIClient) GetNotifications() (models.NotificationsResponse, error) {
 	return result, nil
 }
 
+func (c *APIClient) DeleteNotification(id uint) error {
+	_, err := c.delete(fmt.Sprintf("/notifications/%v", id), nil)
+	if err == nil && c.cache != nil {
+		c.cache.Delete("notifications")
+	}
+	return err
+}
+
 func (c *APIClient) JoinChatroom(chatroomID uint) error {
 	_, err := c.post(fmt.Sprintf("/chatrooms/%v/join", chatroomID), nil)
 	if err == nil && c.cache != nil {
@@ -227,6 +235,15 @@ func (c *APIClient) JoinChatroom(chatroomID uint) error {
 		c.cache.Delete("user_chatrooms")
 	}
 	return err
+}
+
+// JoinChatroomVerbose performs a join and returns the raw response map so the UI can display status.
+func (c *APIClient) JoinChatroomVerbose(chatroomID uint) (map[string]any, error) {
+	res, err := c.post(fmt.Sprintf("/chatrooms/%v/join", chatroomID), nil)
+	if err == nil && c.cache != nil {
+		c.cache.Delete("user_chatrooms")
+	}
+	return res, err
 }
 
 func (c *APIClient) LeaveChatroom(chatroomID string) error {
@@ -344,23 +361,6 @@ func (c *APIClient) BanUser(chatroomID, userID string) error {
 	return err
 }
 
-func (c *APIClient) AcceptInvite(membershipID uint) (models.Chatroom, error) {
-	res, err := c.post(fmt.Sprintf("/users/invitations/%d/accept", membershipID), nil)
-	if err != nil {
-		return models.Chatroom{}, err
-	}
-	if c.cache != nil {
-		c.cache.Delete("user_chatrooms")
-	}
-	var chatroom models.Chatroom
-	if payload, ok := res["Chatroom"]; ok {
-		if b, err := json.Marshal(payload); err == nil {
-			_ = json.Unmarshal(b, &chatroom)
-		}
-	}
-	return chatroom, nil
-}
-
 // CreateChatroom creates a chatroom; recipient is optional (handled server-side).
 func (c *APIClient) CreateChatroom(title string, maxUsers int, isPublic bool) (models.Chatroom, error) {
 	data := map[string]any{
@@ -412,6 +412,33 @@ func (c *APIClient) post(path string, data interface{}) (map[string]interface{},
 	}
 
 	req, err := http.NewRequest("POST", c.baseURL+path, bytes.NewBuffer(jsonData))
+	if err != nil {
+		return nil, err
+	}
+
+	resp, err := c.doRequest(req)
+	if err != nil && isUnauthorized(err) && c.refreshToken != "" {
+		if rerr := c.refreshTokens(); rerr == nil {
+			req2, _ := http.NewRequest("POST", c.baseURL+path, bytes.NewBuffer(jsonData))
+			resp, err = c.doRequest(req2)
+		}
+	}
+	if err != nil {
+		return nil, err
+	}
+
+	var result map[string]interface{}
+	err = json.Unmarshal(resp, &result)
+	return result, err
+}
+
+func (c *APIClient) delete(path string, data interface{}) (map[string]interface{}, error) {
+	jsonData, err := json.Marshal(data)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest("DELETE", c.baseURL+path, bytes.NewBuffer(jsonData))
 	if err != nil {
 		return nil, err
 	}

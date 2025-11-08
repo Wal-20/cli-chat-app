@@ -25,26 +25,24 @@ Add "Kick" functionality for Admins: Allow admins to kick users from chatrooms i
 kicked users can req to join back or be added by admin, banned users cannot, and chatroom will not be displayed to them on search until they are unbanned.
 
 ## Custom Error Handling
-Provide informative feedback to users when they perform invalid actions (e.g., trying to join a non-existent room or sending messages without being in a room). TODOS: - IMPORTANT: remove stale user-chatroom associations from db, should be done when user is not banned, but hasn't joined in 30 days
+Provide informative feedback to users when they perform invalid actions (e.g., trying to join a non-existent room or sending messages without being in a room). TODOS: - IMPORTANT: remove user-chatroom associations from db, should be done when user is not banned, but hasn't joined in 30 days
 
 ## TODOS:
 - remove old notifications
-- notifications for user
-- send a notification if admin has kicked the user
 - for the future, look into errors raised from the db and raise the proper messages
 - give the ability for owner to make admins
 - handle owner / last admin leaving chatroom (no admins left in a chatroom) 
 - (Chore) make the json tags in the backend models snake case, make sure they're the same as the ones in the client
-- Add a page to display message that server is down, instead of showing nothing at all
 - Right now the deployment flow is passing the SERVER_URL into the dockerfile, check how that works for other methods
 - Solve the issue where the token isn't read on a different device, it is still saved however
-- Add message searching functionality
 
+- Add a page to display message that server is down, instead of showing nothing at all
+- Add message searching functionality
 - invite / kick / ban interfaces
 - Join chatroom view, for private chatrooms, the id should be provided in the invite noti, user enters id and joins only if they are invited and are not banned
 - handle client errors more gracefully
 
-## IMMEDIATE TODOS:
-- fix issue where user who just registered can't perform actions like creating chatrooms as server cannot detect new user for some reason, test for other actions
-- Fix chatroom invite immediately joining users instead of just inviting them
-- Implement unique fields for models such as chatroom titles, user names
+- Fix issue where user who just registered can't perform actions like creating chatrooms as server cannot detect new user for some reason, test for other actions
+- Implement unique field constraints for models such as chatroom titles, user names
+- Delete invite notification after joining
+

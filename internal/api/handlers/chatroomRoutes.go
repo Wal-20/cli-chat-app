@@ -230,7 +230,7 @@ func DeleteChatroom(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]interface{}{
+	json.NewEncoder(w).Encode(map[string]any{
 		"Status": "Deleted chatroom successfully",
 	})
 }
@@ -298,17 +298,17 @@ func JoinChatroom(w http.ResponseWriter, r *http.Request) {
 	userChatroom.IsInvited = false
 	userChatroom.LastJoinTime = &now
 
+	fmt.Printf("Joining: user %d -> room %d (was invited=%v, was joined=%v)\n", userID, chatroom.Id, userChatroom.IsInvited, userChatroom.IsJoined)
 	if err := config.DB.Save(&userChatroom).Error; err != nil {
 		http.Error(w, "Error updating user-chatroom association", http.StatusInternalServerError)
 		return
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]interface{}{
+	json.NewEncoder(w).Encode(map[string]any{
 		"Status":   "User added to chatroom successfully",
 		"Chatroom": chatroom,
 	})
-
 }
 
 func transferOwnership(chatroomId string) error {

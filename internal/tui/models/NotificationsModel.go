@@ -1,9 +1,9 @@
 package models
 
 import (
+	"encoding/json"
 	"fmt"
 	"io"
-	"strconv"
 	"strings"
 	"time"
 
@@ -25,6 +25,7 @@ type NotificationsModel struct {
 	flashMessage  string
 	flashStyle    lipgloss.Style
 	loading       bool
+	joining       bool
 }
 
 func NewNotificationsModel(username string, userID uint, apiClient *client.APIClient) NotificationsModel {
@@ -80,13 +81,22 @@ func (m NotificationsModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.flashMessage = "Refreshing..."
 			m.flashStyle = styles.StatusInfoStyle
 			return m, loadNotifications(m.apiClient)
-		case "enter", "j":
-			// If selected notification is an invite, open the join modal prefilled
+
+		case "d":
+			return m.deleteNotification()
+		case "enter":
+			// If selected notification is an invite, join directly
 			if it, ok := m.notifications.SelectedItem().(alertItem); ok {
 				if strings.EqualFold(it.notification.Type, "invite") {
-					id := strconv.Itoa(int(it.notification.ChatroomId))
-					jm := NewJoinChatroomModalWithID(m.apiClient, m, id)
-					return jm, jm.Init()
+					if m.joining {
+						return m, nil
+					}
+					m.joining = true
+					m.loading = true
+					m.flashMessage = "Joining chatroom..."
+					m.flashStyle = styles.StatusInfoStyle
+					nid := uint(it.notification.Id)
+					return m, joinInviteCmd(m.apiClient, it.notification.ChatroomId, nid)
 				}
 			}
 			return m, nil
@@ -107,6 +117,25 @@ func (m NotificationsModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if len(msg.resp.Notifications) == 0 {
 			m.flashMessage = "You're all caught up."
 		}
+		return m, nil
+	case inviteJoinedMsg:
+		m.joining = false
+		m.loading = false
+		if msg.err != nil {
+			m.flashMessage = msg.err.Error()
+			m.flashStyle = styles.StatusErrorStyle
+			return m, nil
+		}
+		// Remove the notification from the UI list immediately (best-effort)
+		if idx := m.findNotificationIndex(msg.notiID); idx >= 0 {
+			m.notifications.RemoveItem(idx)
+		}
+		// Navigate into the joined chatroom if we could parse it; otherwise stay
+		if msg.room.Id != 0 {
+			return NewChatroomModel(m.username, m.userID, msg.room, m.apiClient), nil
+		}
+		m.flashMessage = "Joined"
+		m.flashStyle = styles.StatusSuccessStyle
 		return m, nil
 	}
 
@@ -132,8 +161,9 @@ func (m NotificationsModel) View() string {
 	}
 
 	helpItems := []string{
-		styles.RenderKeyBinding("Enter/j", "Join invite"),
+		styles.RenderKeyBinding("Enter", "Join invite"),
 		styles.RenderKeyBinding("r", "Refresh"),
+		styles.RenderKeyBinding("d", "Delete"),
 		styles.RenderKeyBinding("Esc", "Back"),
 	}
 	help := strings.Join(helpItems, styles.HelpStyle.Render("  "))
@@ -158,6 +188,30 @@ func (m NotificationsModel) View() string {
 	return styles.AppStyle.Render(layout)
 }
 
+func (m NotificationsModel) deleteNotification() (tea.Model, tea.Cmd) {
+	if n, ok := m.notifications.SelectedItem().(alertItem); ok {
+		m.loading = true
+		m.flashMessage = "Deleting notification..."
+		m.flashStyle = styles.StatusInfoStyle
+
+		id := uint(n.notification.Id)
+		if err := m.apiClient.DeleteNotification(id); err != nil {
+			m.flashMessage = fmt.Sprintf("Error deleting notification: %v", err)
+			m.flashStyle = styles.StatusErrorStyle
+			m.loading = false
+			return m, nil
+		}
+
+		idx := m.notifications.Index()
+		m.notifications.RemoveItem(idx)
+
+		m.flashMessage = fmt.Sprintf("Notification %d deleted", id)
+		m.flashStyle = styles.StatusSuccessStyle
+		m.loading = false
+	}
+	return m, nil
+}
+
 func (m NotificationsModel) paneWidth() int {
 	if m.width <= 0 {
 		return 48
@@ -179,6 +233,47 @@ func loadNotifications(apiClient *client.APIClient) tea.Cmd {
 		resp, err := apiClient.GetNotifications()
 		return notificationsLoadedMsg{resp: resp, err: err}
 	}
+}
+
+// Direct-join from an invite and return result
+// moved below to avoid duplicates
+
+// messages and command for direct-join from invite
+type inviteJoinedMsg struct {
+	room   appmodels.Chatroom
+	err    error
+	notiID uint
+}
+
+func joinInviteCmd(apiClient *client.APIClient, chatroomID uint, notificationID uint) tea.Cmd {
+	return func() tea.Msg {
+		res, err := apiClient.JoinChatroomVerbose(chatroomID)
+		if err != nil {
+			return inviteJoinedMsg{err: err, notiID: notificationID}
+		}
+		// Try to parse Chatroom from response for direct navigation
+		var room appmodels.Chatroom
+		if ch, ok := res["Chatroom"]; ok {
+			if b, e := json.Marshal(ch); e == nil {
+				_ = json.Unmarshal(b, &room)
+			}
+		}
+		// Best-effort delete notification on success
+		_ = apiClient.DeleteNotification(notificationID)
+		return inviteJoinedMsg{room: room, notiID: notificationID}
+	}
+}
+
+func (m NotificationsModel) findNotificationIndex(notiID uint) int {
+	items := m.notifications.Items()
+	for i, it := range items {
+		if ai, ok := it.(alertItem); ok {
+			if uint(ai.notification.Id) == notiID {
+				return i
+			}
+		}
+	}
+	return -1
 }
 
 type alertItem struct {
