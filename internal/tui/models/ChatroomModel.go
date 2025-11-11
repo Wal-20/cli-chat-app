@@ -12,6 +12,7 @@ import (
 	"github.com/Wal-20/cli-chat-app/internal/tui/client"
 	"github.com/Wal-20/cli-chat-app/internal/tui/styles"
 	"github.com/charmbracelet/bubbles/textarea"
+	"github.com/charmbracelet/bubbles/textinput"
 	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
@@ -44,6 +45,10 @@ type ChatroomModel struct {
 	flashStyle         lipgloss.Style
 	wsChan             <-chan models.MessageWithUser
 	wsCancel           func()
+	// search state
+	searching   bool
+	searchInput textinput.Model
+	searchQuery string
 }
 
 func NewChatroomModel(username string, userID uint, chatroom models.Chatroom, apiClient *client.APIClient) ChatroomModel {
@@ -82,6 +87,15 @@ func NewChatroomModel(username string, userID uint, chatroom models.Chatroom, ap
 	vp.Style = styles.ConversationWrapperStyle
 	vp.MouseWheelEnabled = true
 
+	// search input setup
+	s := textinput.New()
+	s.Prompt = "/ "
+	s.Placeholder = "Search messages"
+	s.PromptStyle = styles.InputPromptFocusedStyle
+	s.TextStyle = styles.InputTextFocusedStyle
+	s.PlaceholderStyle = styles.InputPlaceholderStyle
+	s.Cursor.Style = styles.KeyStyle
+
 	model := ChatroomModel{
 		apiClient:    apiClient,
 		username:     username,
@@ -94,6 +108,7 @@ func NewChatroomModel(username string, userID uint, chatroom models.Chatroom, ap
 		sidebarWidth: styles.SidebarStyle.GetWidth(),
 		showSidebar:  true,
 		flashStyle:   styles.StatusInfoStyle,
+		searchInput:  s,
 	}
 
 	if msgErr != nil {
@@ -142,12 +157,26 @@ func (m ChatroomModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "ctrl+c":
 			return m, tea.Quit
 		case "esc":
+			if m.searching {
+				m.searching = false
+				m.searchInput.Blur()
+				// clear active filter by reloading messages (no search)
+				m.searchQuery = ""
+				return m, searchMessages(m.apiClient, m.chatroom.Id, "")
+			}
 			if m.wsCancel != nil {
 				m.wsCancel()
 			}
 			// Ensure next main screen pulls fresh memberships
 			m.apiClient.InvalidateUserChatrooms()
 			return NewMainChatModel(m.username, m.userID, m.apiClient), nil
+		case "/", "ctrl+f":
+			if !m.searching {
+				m.searching = true
+				m.searchInput.SetValue("")
+				return m, m.searchInput.Focus()
+			}
+			return m, nil
 		case "ctrl+u":
 			m.viewport.HalfViewUp()
 			return m, nil
@@ -163,6 +192,10 @@ func (m ChatroomModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			modal := NewInviteUserModal(m.apiClient, m.chatroom.Id, m)
 			return modal, modal.Init()
 		case "enter":
+			if m.searching {
+				q := strings.TrimSpace(m.searchInput.Value())
+				return m, searchMessages(m.apiClient, m.chatroom.Id, q)
+			}
 			if m.sending {
 				return m, nil
 			}
@@ -217,6 +250,22 @@ func (m ChatroomModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.flashMessage = "Live updates disconnected"
 		m.flashStyle = styles.StatusErrorStyle
 		return m, nil
+	case searchMessagesResultMsg:
+		if msg.err != nil {
+			m.flashMessage = fmt.Sprintf("Search failed: %s", msg.err.Error())
+			m.flashStyle = styles.StatusErrorStyle
+			return m, nil
+		}
+		m.messages = msg.messages
+		m.searchQuery = msg.query
+		if strings.TrimSpace(msg.query) == "" {
+			m.flashMessage = ""
+		} else {
+			m.flashMessage = fmt.Sprintf("Filtered by %q", msg.query)
+			m.flashStyle = styles.StatusInfoStyle
+		}
+		m.refreshViewportContent(false)
+		return m, nil
 	}
 
 	var cmds []tea.Cmd
@@ -225,13 +274,19 @@ func (m ChatroomModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	m.viewport, viewportCmd = m.viewport.Update(msg)
 	cmds = append(cmds, viewportCmd)
 
-	if keyMsg, ok := msg.(tea.KeyMsg); ok && keyMsg.String() == "enter" {
+	if keyMsg, ok := msg.(tea.KeyMsg); ok && keyMsg.String() == "enter" && !m.searching {
 		return m, tea.Batch(cmds...)
 	}
 
-	var inputCmd tea.Cmd
-	m.input, inputCmd = m.input.Update(msg)
-	cmds = append(cmds, inputCmd)
+	if m.searching {
+		var sic tea.Cmd
+		m.searchInput, sic = m.searchInput.Update(msg)
+		cmds = append(cmds, sic)
+	} else {
+		var inputCmd tea.Cmd
+		m.input, inputCmd = m.input.Update(msg)
+		cmds = append(cmds, inputCmd)
+	}
 
 	return m, tea.Batch(cmds...)
 }
@@ -239,6 +294,20 @@ func (m ChatroomModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 // tea message types for websocket events
 type wsMessageMsg struct{ message models.MessageWithUser }
 type wsClosedMsg struct{}
+
+// search results
+type searchMessagesResultMsg struct {
+	messages []models.MessageWithUser
+	err      error
+	query    string
+}
+
+func searchMessages(api *client.APIClient, chatroomID uint, query string) tea.Cmd {
+	return func() tea.Msg {
+		msgs, err := api.GetMessagesWithSearch(chatroomID, query)
+		return searchMessagesResultMsg{messages: msgs, err: err, query: query}
+	}
+}
 
 func listenWS(ch <-chan models.MessageWithUser) tea.Cmd {
 	return func() tea.Msg {
@@ -260,6 +329,14 @@ func (m ChatroomModel) View() string {
 	summary := styles.SubtitleStyle.Render(fmt.Sprintf("%s | %d of %d participants", visibility, len(m.users), m.chatroom.MaxUserCount))
 
 	conversation := m.viewport.View()
+	// Inject search UI before composing the row, so it becomes visible
+	if m.searching {
+		searchBar := styles.InputFieldFocusedStyle.Render(m.searchInput.View())
+		conversation = lipgloss.JoinVertical(lipgloss.Left, searchBar, "", conversation)
+	} else if strings.TrimSpace(m.searchQuery) != "" {
+		hint := styles.MutedTextStyle.Render(fmt.Sprintf("Filter: %q  (Esc to clear)", m.searchQuery))
+		conversation = lipgloss.JoinVertical(lipgloss.Left, hint, "", conversation)
+	}
 
 	var sidebar string
 	if m.showSidebar {
@@ -292,6 +369,7 @@ func (m ChatroomModel) View() string {
 	helpItems := []string{
 		styles.RenderKeyBinding("Esc", "Back"),
 		styles.RenderKeyBinding("Enter", "Send"),
+		styles.RenderKeyBinding("/ or Ctrl + f", "Search messages"),
 		styles.RenderKeyBinding("Ctrl + o", "Invite User"),
 		styles.RenderKeyBinding("Ctrl + c", "Quit"),
 	}
@@ -529,19 +607,6 @@ func getUserRole(users []models.UserChatroom, username string, currentUsername s
 		return "Member"
 	}
 	return "Guest"
-}
-
-func renderRoleBadge(role string) string {
-	switch role {
-	case "Owner":
-		return styles.ParticipantBadgeOwnerStyle.Render("owner")
-	case "Admin":
-		return styles.ParticipantBadgeAdminStyle.Render("admin")
-	case "You":
-		return styles.ParticipantBadgeYouStyle.Render("you")
-	default:
-		return ""
-	}
 }
 
 func sidebarRank(user models.UserChatroom, current string) int {

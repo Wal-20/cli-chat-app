@@ -1,0 +1,41 @@
+version: "3.9"
+
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        SERVER_URL: ${SERVER_URL}
+    container_name: chatapp-server
+    environment:
+      SERVER_URL: ${SERVER_URL}
+      SERVICE_URI: ${SERVICE_URI}
+      db_name: ${db_name}
+      db_host: ${db_host}
+      db_port: ${db_port}
+      db_username: ${db_username}
+      db_password: ${db_password}
+      JWT_SECRET: ${JWT_SECRET}
+    depends_on:
+      - db
+    ports:
+      - "8080:8080"
+    restart: unless-stopped
+
+  db:
+    image: mariadb:latest
+    container_name: chatapp-db
+    restart: unless-stopped
+    environment:
+      MARIADB_ROOT_PASSWORD: ${db_password}
+      MARIADB_DATABASE: ${db_name}
+      MARIADB_USER: ${db_username}
+      MARIADB_PASSWORD: ${db_password}
+    volumes:
+      - mariadb_data:/var/lib/mysql
+    ports:
+      - "3306:3306"
+
+volumes:
+  mariadb_data:

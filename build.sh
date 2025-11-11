@@ -45,11 +45,8 @@ build_client() {
 }
 
 build_client linux amd64
-
 build_client darwin arm64
-
 build_client darwin amd64
-
 build_client windows amd64
 
 echo "All builds completed successfully."

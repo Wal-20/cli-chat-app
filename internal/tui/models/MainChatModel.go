@@ -27,7 +27,7 @@ func NewChatroomDelegate() chatroomDelegate {
 	return chatroomDelegate{}
 }
 
-func (d chatroomDelegate) Height() int                               { return 2 }
+func (d chatroomDelegate) Height() int                               { return 3 }
 func (d chatroomDelegate) Spacing() int                              { return 1 }
 func (d chatroomDelegate) Update(msg tea.Msg, m *list.Model) tea.Cmd { return nil }
 

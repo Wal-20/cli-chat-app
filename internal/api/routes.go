@@ -38,7 +38,7 @@ func NewServer() {
 	mux.Handle("GET /api/users/chatrooms", middleware.AuthMiddleware(http.HandlerFunc(handlers.GetChatroomsByUser)))
 	mux.Handle("GET /api/users/notifications", middleware.AuthMiddleware(http.HandlerFunc(handlers.GetNotifications)))
 
-	//admin routes
+	// Admin routes
 	mux.Handle("POST /api/users/chatrooms/{id}/invite/{userId}", middleware.AuthMiddleware(
 		middleware.ChatroomMiddleware(
 			http.HandlerFunc(handlers.InviteUser),
