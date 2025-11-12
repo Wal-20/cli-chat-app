@@ -10,7 +10,6 @@ import (
 	"gorm.io/gorm"
 	"net/http"
 	"strconv"
-	"strings"
 	"time"
 )
 
@@ -130,17 +129,6 @@ func Login(w http.ResponseWriter, r *http.Request) {
 		"Status":       "success",
 		"AccessToken":  accessToken,
 		"RefreshToken": refreshToken,
-	})
-}
-
-func LogOut(w http.ResponseWriter, r *http.Request) {
-	// Stateless: instruct the client to clear its local tokens; drop cached claims if present.
-	authHeader := r.Header.Get("Authorization")
-	if strings.HasPrefix(authHeader, "Bearer ") {
-		utils.AuthCache.Delete(strings.TrimPrefix(authHeader, "Bearer "))
-	}
-	json.NewEncoder(w).Encode(map[string]any{
-		"Status": "Logged out successfully",
 	})
 }
 

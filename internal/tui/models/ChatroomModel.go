@@ -78,7 +78,7 @@ func NewChatroomModel(username string, userID uint, chatroom models.Chatroom, ap
 		messages = []models.MessageWithUser{}
 	}
 
-	users, userErr := apiClient.GetUsersByChatroom(chatroom.Id)
+	users, userErr := apiClient.GetUsersByChatroom(chatroom.Id, true)
 	if userErr != nil {
 		users = []models.UserChatroom{}
 	}
@@ -191,6 +191,22 @@ func (m ChatroomModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			modal := NewInviteUserModal(m.apiClient, m.chatroom.Id, m)
 			return modal, modal.Init()
+		case "ctrl+k":
+			if !m.currentUserIsAdmin() {
+				m.flashMessage = "Only admins can kick users"
+				m.flashStyle = styles.StatusErrorStyle
+				return m, nil
+			}
+			km := NewKickUserModal(m.apiClient, m.chatroom.Id, m)
+			return km, km.Init()
+		case "ctrl+b":
+			if !m.currentUserIsAdmin() {
+				m.flashMessage = "Only admins can ban users"
+				m.flashStyle = styles.StatusErrorStyle
+				return m, nil
+			}
+			bm := NewBanUserModal(m.apiClient, m.chatroom.Id, m)
+			return bm, bm.Init()
 		case "enter":
 			if m.searching {
 				q := strings.TrimSpace(m.searchInput.Value())
@@ -369,8 +385,10 @@ func (m ChatroomModel) View() string {
 	helpItems := []string{
 		styles.RenderKeyBinding("Esc", "Back"),
 		styles.RenderKeyBinding("Enter", "Send"),
-		styles.RenderKeyBinding("/ or Ctrl + f", "Search messages"),
-		styles.RenderKeyBinding("Ctrl + o", "Invite User"),
+		styles.RenderKeyBinding("/ or Ctrl+F", "Search messages"),
+		styles.RenderKeyBinding("Ctrl+O", "Invite"),
+		styles.RenderKeyBinding("Ctrl+K", "Kick"),
+		styles.RenderKeyBinding("Ctrl+B", "Ban"),
 		styles.RenderKeyBinding("Ctrl + c", "Quit"),
 	}
 	help := strings.Join(helpItems, styles.HelpStyle.Render("  "))

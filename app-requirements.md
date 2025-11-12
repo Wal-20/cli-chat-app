@@ -35,12 +35,12 @@ Provide informative feedback to users when they perform invalid actions (e.g., t
 - (Chore) make the json tags in the backend models snake case, make sure they're the same as the ones in the client
 - Right now the deployment flow is passing the SERVER_URL into the dockerfile, check how that works for other methods
 
-- invite / kick / ban interfaces
+- Hide Chatrooms that user is banned from
 - Join chatroom view, for private chatrooms, the id should be provided in the invite noti, user enters id and joins only if they are invited and are not banned
 - handle client errors more gracefully
 
 - After deploying, add Github actions for compiling binaries and displaying them in releases
-- Solve the issue where the token isn't read on a different device, it is still saved however, also when logging out and closing the app, then opening it back again, the session is returned, the token is still there, review logout logic
+- Solve the issue where the token isn't read on a different device, it is still saved however,
 - Fix issue where user who just registered can't perform actions like creating chatrooms as server cannot detect new user for some reason, test for other actions
 - Implement unique field constraints for models such as chatroom titles, user names
 - When starting the app logged in, the main chat model displays all chatrooms without pagination, not the case when starting not logged in

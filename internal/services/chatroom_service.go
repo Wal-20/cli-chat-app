@@ -25,24 +25,16 @@ func (s *ChatroomService) JoinChatroom(userID uint, username string, chatroomID 
 	if err != nil {
 		return nil, err
 	}
+
 	if _, err := s.repo.FindUserChatroom(userID, chatroom.Id); err != nil {
 		if err == gorm.ErrRecordNotFound {
+			// Create a placeholder membership without joining yet; handler validates and flips joined.
 			now := time.Now()
-			uc := &models.UserChatroom{UserID: userID, Name: username, ChatroomID: chatroom.Id, LastJoinTime: &now, IsJoined: true}
+			uc := &models.UserChatroom{UserID: userID, Name: username, ChatroomID: chatroom.Id, LastJoinTime: &now, IsJoined: false}
 			if err := s.repo.CreateUserChatroom(uc); err != nil {
 				return nil, err
 			}
 		} else {
-			return nil, err
-		}
-	} else {
-		// already exists; ensure joined
-		// load record and update
-		uc, _ := s.repo.FindUserChatroom(userID, chatroom.Id)
-		now := time.Now()
-		uc.IsJoined = true
-		uc.LastJoinTime = &now
-		if err := s.repo.SaveUserChatroom(uc); err != nil {
 			return nil, err
 		}
 	}

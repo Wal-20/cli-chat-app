@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"strconv"
 	"time"
 
 	"github.com/Wal-20/cli-chat-app/internal/config"
@@ -66,21 +67,27 @@ func GetPublicChatrooms(w http.ResponseWriter, r *http.Request) {
 func GetUsersByChatroom(w http.ResponseWriter, r *http.Request) {
 	encoder := json.NewEncoder(w)
 	chatroomId := r.PathValue("id")
+	activeParam := r.URL.Query().Get("active")
 
 	if chatroomId == "" {
 		http.Error(w, "Please provide a valid ID", http.StatusBadRequest)
 		return
 	}
 
-	// Fetch all user-chatroom associations for the chatroom
 	var userChatrooms []models.UserChatroom
-	if err := config.DB.Where("chatroom_id = ?", chatroomId).Find(&userChatrooms).Error; err != nil {
+	query := config.DB.Where("chatroom_id = ?", chatroomId)
+
+	// Apply condition if active=true
+	if active, err := strconv.ParseBool(activeParam); err == nil && active {
+		query = query.Where("is_banned = ? AND is_joined = ?", false, true)
+	}
+
+	if err := query.Find(&userChatrooms).Error; err != nil {
 		http.Error(w, "Error fetching user-chatroom associations", http.StatusInternalServerError)
 		return
 	}
 
-	// Match client expectation key: userChatroom
-	encoder.Encode(map[string]interface{}{
+	encoder.Encode(map[string]any{
 		"userChatroom": userChatrooms,
 	})
 }

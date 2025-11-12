@@ -129,11 +129,25 @@ func (c *APIClient) LoginOrRegister(username, password string) (map[string]inter
 }
 
 func (c *APIClient) Logout() error {
-	_, err := c.post("/users/logout", nil)
-	if err == nil && c.cache != nil {
+	tokenPair, err := utils.LoadTokenPair()
+	if err != nil {
+		return fmt.Errorf("failed to load token pair: %w", err)
+	}
+
+	utils.AuthCache.Delete(tokenPair.AccessToken)
+	utils.AuthCache.Delete(tokenPair.RefreshToken)
+
+	tokenPair.AccessToken = ""
+	tokenPair.RefreshToken = ""
+
+	if err := utils.SaveTokenPair(tokenPair); err != nil {
+		return fmt.Errorf("error clearing token pair: %w", err)
+	}
+
+	if c.cache != nil {
 		c.cache.Flush()
 	}
-	return err
+	return nil
 }
 
 // Chatroom endpoints
@@ -185,8 +199,12 @@ func (c *APIClient) GetUserChatrooms() ([]models.Chatroom, error) {
 	return result.Chatrooms, nil
 }
 
-func (c *APIClient) GetUsersByChatroom(chatroomID uint) ([]models.UserChatroom, error) {
+func (c *APIClient) GetUsersByChatroom(chatroomID uint, active bool) ([]models.UserChatroom, error) {
 	endpoint := fmt.Sprintf("/chatrooms/%v/users", chatroomID)
+	if active {
+		endpoint += "?active=true"
+	}
+
 	resp, err := c.get(endpoint)
 	if err != nil {
 		// Log the actual error body for debugging
