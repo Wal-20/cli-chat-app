@@ -177,6 +177,8 @@ func (m ChatroomModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m, m.searchInput.Focus()
 			}
 			return m, nil
+		case "ctrl+l":
+			return m.leaveChatroom(m.apiClient, m.chatroom.Id)
 		case "ctrl+u":
 			m.viewport.HalfViewUp()
 			return m, nil
@@ -325,6 +327,16 @@ func searchMessages(api *client.APIClient, chatroomID uint, query string) tea.Cm
 	}
 }
 
+func (m ChatroomModel) leaveChatroom(api *client.APIClient, chatroomID uint) (tea.Model, tea.Cmd) {
+	err := api.LeaveChatroom(strconv.FormatUint(uint64(chatroomID), 10))
+	if err != nil {
+		m.flashMessage = "Failed to Leave Chatroom"
+		m.flashStyle = styles.StatusErrorStyle
+		return m, nil
+	}
+	return NewMainChatModel(m.username, m.userID, m.apiClient), nil
+}
+
 func listenWS(ch <-chan models.MessageWithUser) tea.Cmd {
 	return func() tea.Msg {
 		msg, ok := <-ch
@@ -386,6 +398,7 @@ func (m ChatroomModel) View() string {
 		styles.RenderKeyBinding("Esc", "Back"),
 		styles.RenderKeyBinding("Enter", "Send"),
 		styles.RenderKeyBinding("/ or Ctrl+F", "Search messages"),
+		styles.RenderKeyBinding("Ctrl+L", "Leave Chatroom"),
 		styles.RenderKeyBinding("Ctrl+O", "Invite"),
 		styles.RenderKeyBinding("Ctrl+K", "Kick"),
 		styles.RenderKeyBinding("Ctrl+B", "Ban"),
