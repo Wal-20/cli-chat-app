@@ -474,6 +474,63 @@ func KickUser(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+func MakeAdmin(w http.ResponseWriter, r *http.Request) {
+	isOwner := r.Context().Value("isOwner").(bool)
+	userId := r.PathValue("userId")
+	chatroomId := r.PathValue("id")
+
+	if userId == "" {
+		http.Error(w, "No valid user ID provided", http.StatusBadRequest)
+		return
+	}
+
+	if chatroomId == "" {
+		http.Error(w, "No valid chatroom ID provided", http.StatusBadRequest)
+		return
+	}
+
+	if !isOwner {
+		http.Error(w, "You are not the owner", http.StatusUnauthorized)
+		return
+	}
+
+	var userChatroom models.UserChatroom
+	if err := config.DB.Where("user_id = ? AND chatroom_id = ?", userId, chatroomId).First(&userChatroom).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			http.Error(w, "user-chatroom association not found", http.StatusNotFound)
+		} else {
+			http.Error(w, "Error retrieving user-chatroom association", http.StatusInternalServerError)
+		}
+		return
+	}
+
+	if !userChatroom.IsJoined {
+		http.Error(w, "User not part of this chatroom", http.StatusBadRequest)
+		return
+	}
+	userChatroom.IsAdmin = true
+
+	if err := config.DB.Save(&userChatroom).Error; err != nil {
+		http.Error(w, "Error saving user-chatroom association", http.StatusInternalServerError)
+		return
+	}
+
+	_ = config.DB.Create(&models.Notification{
+		UserId:     userChatroom.UserID,
+		ChatroomId: userChatroom.ChatroomID,
+		Type:       "Promoted to Admin",
+		SenderId:   r.Context().Value("userID").(uint),
+		Content:    fmt.Sprintf("You have been promoted to admin in chatroom %s", chatroomId),
+		CreatedAt:  time.Now(),
+		UpdatedAt:  time.Now(),
+	}).Error
+
+	json.NewEncoder(w).Encode(map[string]any{
+		"Status":      "User promoted to admin",
+		"User status": userChatroom,
+	})
+}
+
 func BanUser(w http.ResponseWriter, r *http.Request) {
 
 	isAdmin := r.Context().Value("isAdmin").(bool)

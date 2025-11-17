@@ -69,16 +69,19 @@ func (d chatroomDelegate) Render(w io.Writer, m list.Model, index int, listItem 
 }
 
 type MainChatModel struct {
-	apiClient       *client.APIClient
-	userID          uint
-	username        string
-	userChatrooms   list.Model
-	publicChatrooms list.Model
-	activeList      int
-	width           int
-	height          int
-	flashMessage    string
-	flashStyle      lipgloss.Style
+	apiClient        *client.APIClient
+	userID           uint
+	username         string
+	userChatrooms    list.Model
+	publicChatrooms  list.Model
+	activeList       int
+	width            int
+	height           int
+	flashMessage     string
+	flashStyle       lipgloss.Style
+	confirmingDelete bool
+	deleteIndex      int
+	deleteChatroom   models.Chatroom
 }
 
 func NewMainChatModel(username string, userID uint, apiClient *client.APIClient) MainChatModel {
@@ -170,6 +173,44 @@ func (m MainChatModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case tea.KeyMsg:
+		// Handle delete confirmation first
+		if m.confirmingDelete {
+			switch msg.String() {
+			case "y", "Y", "enter":
+				if err := m.apiClient.DeleteChatroom(m.deleteChatroom.Id); err != nil {
+					m.flashMessage = fmt.Sprintf("Delete failed: %s", err.Error())
+					m.flashStyle = styles.StatusErrorStyle
+					m.confirmingDelete = false
+					return m, nil
+				}
+				// remove from user chatrooms list
+				items := m.userChatrooms.Items()
+				if m.deleteIndex >= 0 && m.deleteIndex < len(items) {
+					m.userChatrooms.RemoveItem(m.deleteIndex)
+				} else {
+					// fallback: filter by id
+					var kept []list.Item
+					for _, it := range items {
+						if ci, ok := it.(chatroomItem); ok && ci.chatroom.Id != m.deleteChatroom.Id {
+							kept = append(kept, it)
+						}
+					}
+					m.userChatrooms.SetItems(kept)
+				}
+				m.flashMessage = fmt.Sprintf("Deleted chatroom '%s'", m.deleteChatroom.Title)
+				m.flashStyle = styles.StatusSuccessStyle
+				m.confirmingDelete = false
+				return m, nil
+			case "n", "esc":
+				m.confirmingDelete = false
+				m.flashMessage = ""
+				return m, nil
+			default:
+				// ignore other keys while confirming
+				return m, nil
+			}
+		}
+
 		switch msg.String() {
 		case "tab":
 			m.activeList = (m.activeList + 1) % 2
@@ -184,6 +225,28 @@ func (m MainChatModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "n":
 			nm := NewNotificationsModel(m.username, m.userID, m.apiClient)
 			return nm, loadNotifications(m.apiClient)
+		case "ctrl+d":
+			// Delete chatroom: only in "Your chatrooms" pane and only owner
+			if m.activeList != 0 {
+				return m, nil
+			}
+			idx := m.userChatrooms.Index()
+			if idx < 0 {
+				return m, nil
+			}
+			if item, ok := m.userChatrooms.SelectedItem().(chatroomItem); ok {
+				if item.chatroom.OwnerId != m.userID {
+					m.flashMessage = "Only the owner can delete this chatroom"
+					m.flashStyle = styles.StatusErrorStyle
+					return m, nil
+				}
+				m.confirmingDelete = true
+				m.deleteIndex = idx
+				m.deleteChatroom = item.chatroom
+				m.flashMessage = fmt.Sprintf("Delete '%s'? (y to confirm, n to cancel)", item.chatroom.Title)
+				m.flashStyle = styles.StatusErrorStyle
+			}
+			return m, nil
 		case "enter":
 			if m.activeList == 0 {
 				if item, ok := m.userChatrooms.SelectedItem().(chatroomItem); ok {
@@ -246,6 +309,7 @@ func (m MainChatModel) View() string {
 		styles.RenderKeyBinding("Tab", "Switch pane"),
 		styles.RenderKeyBinding("Enter", "Open or join"),
 		styles.RenderKeyBinding("Ctrl+J", "Join by ID"),
+		styles.RenderKeyBinding("Ctrl+D", "Delete Chatroom"),
 		styles.RenderKeyBinding("L", "Log out"),
 		styles.RenderKeyBinding("n", "Notifications"),
 		styles.RenderKeyBinding("q", "Quit"),

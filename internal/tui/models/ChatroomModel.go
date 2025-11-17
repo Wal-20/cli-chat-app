@@ -193,6 +193,22 @@ func (m ChatroomModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			modal := NewInviteUserModal(m.apiClient, m.chatroom.Id, m)
 			return modal, modal.Init()
+		case "ctrl+p":
+			// only owner can promote; we approximate owner==admin+owner flag
+			isOwner := false
+			for _, u := range m.users {
+				if u.UserID == m.userID && u.IsOwner {
+					isOwner = true
+					break
+				}
+			}
+			if !isOwner {
+				m.flashMessage = "Only the owner can promote admins"
+				m.flashStyle = styles.StatusErrorStyle
+				return m, nil
+			}
+			pm := NewPromoteUserModal(m.apiClient, m.chatroom.Id, m)
+			return pm, pm.Init()
 		case "ctrl+k":
 			if !m.currentUserIsAdmin() {
 				m.flashMessage = "Only admins can kick users"
@@ -399,11 +415,27 @@ func (m ChatroomModel) View() string {
 		styles.RenderKeyBinding("Enter", "Send"),
 		styles.RenderKeyBinding("/ or Ctrl+F", "Search messages"),
 		styles.RenderKeyBinding("Ctrl+L", "Leave Chatroom"),
-		styles.RenderKeyBinding("Ctrl+O", "Invite"),
-		styles.RenderKeyBinding("Ctrl+K", "Kick"),
-		styles.RenderKeyBinding("Ctrl+B", "Ban"),
-		styles.RenderKeyBinding("Ctrl + c", "Quit"),
 	}
+	// Admin-level actions: only show if current user is admin/owner
+	if m.currentUserIsAdmin() {
+		helpItems = append(helpItems,
+			styles.RenderKeyBinding("Ctrl+O", "Invite"),
+			styles.RenderKeyBinding("Ctrl+K", "Kick"),
+			styles.RenderKeyBinding("Ctrl+B", "Ban"),
+		)
+	}
+	// Owner-only action: promote
+	isOwner := false
+	for _, u := range m.users {
+		if u.UserID == m.userID && u.IsOwner {
+			isOwner = true
+			break
+		}
+	}
+	if isOwner {
+		helpItems = append(helpItems, styles.RenderKeyBinding("Ctrl+P", "Promote"))
+	}
+	helpItems = append(helpItems, styles.RenderKeyBinding("Ctrl + c", "Quit"))
 	help := strings.Join(helpItems, styles.HelpStyle.Render("  "))
 
 	footerContent := statusStyle.Render(info) + "\n" + styles.HelpStyle.Render(help)

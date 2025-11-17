@@ -246,6 +246,14 @@ func (c *APIClient) DeleteNotification(id uint) error {
 	return err
 }
 
+func (c *APIClient) DeleteChatroom(id uint) error {
+	_, err := c.delete(fmt.Sprintf("/chatrooms/%v", id), nil)
+	if err == nil && c.cache != nil {
+		c.cache.Delete("user_chatrooms")
+	}
+	return err
+}
+
 func (c *APIClient) JoinChatroom(chatroomID uint) error {
 	_, err := c.post(fmt.Sprintf("/chatrooms/%v/join", chatroomID), nil)
 	if err == nil && c.cache != nil {
@@ -395,6 +403,11 @@ func (c *APIClient) KickUser(chatroomID, userID string) error {
 
 func (c *APIClient) BanUser(chatroomID, userID string) error {
 	_, err := c.post(fmt.Sprintf("/users/chatrooms/%s/ban/%s", chatroomID, userID), nil)
+	return err
+}
+
+func (c *APIClient) MakeAdmin(chatroomID, userID string) error {
+	_, err := c.post(fmt.Sprintf("/users/chatrooms/%s/make-admin/%s", chatroomID, userID), nil)
 	return err
 }
 

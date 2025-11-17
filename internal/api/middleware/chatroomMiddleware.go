@@ -18,6 +18,7 @@ import (
 type membershipInfo struct {
 	IsMember bool
 	IsAdmin  bool
+	IsOwner  bool
 }
 
 func ChatroomMiddleware(next http.Handler) http.Handler {
@@ -31,8 +32,9 @@ func ChatroomMiddleware(next http.Handler) http.Handler {
 
 		if cached, found := utils.MembershipCache.Get(cacheKey); found {
 			if info, ok := cached.(membershipInfo); ok && info.IsMember {
-				// Ensure admin status is propagated to downstream handlers
+				// Ensure admin/owner status is propagated to downstream handlers
 				ctx := context.WithValue(r.Context(), "isAdmin", info.IsAdmin)
+				ctx = context.WithValue(ctx, "isOwner", info.IsOwner)
 				next.ServeHTTP(w, r.WithContext(ctx))
 				return
 			}
@@ -59,12 +61,13 @@ func ChatroomMiddleware(next http.Handler) http.Handler {
 			}
 			return
 		}
-		// Cache both membership and admin flag (owner has admin capabilities)
-		adminOrOwner := userChatroom.IsAdmin || userChatroom.IsOwner
-		utils.MembershipCache.Set(cacheKey, membershipInfo{IsMember: true, IsAdmin: adminOrOwner}, time.Minute*5)
-		ctx := context.WithValue(r.Context(), "isAdmin", adminOrOwner) // store admin status
+
+		utils.MembershipCache.Set(cacheKey, membershipInfo{IsMember: true, IsAdmin: userChatroom.IsAdmin, IsOwner: userChatroom.IsOwner}, time.Minute*5)
+		ctx := context.WithValue(r.Context(), "isAdmin", userChatroom.IsAdmin)
+		ctx = context.WithValue(ctx, "isOwner", userChatroom.IsOwner)
+
 		next.ServeHTTP(w, r.WithContext(ctx))
 	})
 }
 
-// get the authenticated user from the context, check if the user is part of the chatroom, and add the user's admin status
+// get the authenticated user from the context, check if the user is part of the chatroom, and add the user's admin/owner status

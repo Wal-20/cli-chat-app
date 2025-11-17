@@ -54,6 +54,12 @@ func NewServer() {
 		),
 	))
 
+	mux.Handle("POST /api/users/chatrooms/{id}/make-admin/{userId}", middleware.AuthMiddleware(
+		middleware.ChatroomMiddleware(
+			http.HandlerFunc(handlers.MakeAdmin),
+		),
+	))
+
 	// Chatroom routes
 	mux.HandleFunc("GET /api/chatrooms", handlers.GetChatrooms)
 	mux.Handle("GET /api/chatrooms/public", middleware.AuthMiddleware(http.HandlerFunc(handlers.GetPublicChatrooms)))
@@ -111,7 +117,6 @@ func NewServer() {
 		),
 	)
 
-	// Start the server on port 8080
 	fmt.Println("Server starting on port 8080...")
 	log.Fatal(http.ListenAndServe(":8080", middleware.CheckCORS(mux)))
 }

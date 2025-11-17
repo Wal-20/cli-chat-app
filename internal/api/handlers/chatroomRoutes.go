@@ -182,7 +182,7 @@ func CreateChatroom(w http.ResponseWriter, r *http.Request) {
 	now := time.Now()
 	// Add entries to UserChatroom
 	userChatrooms := []models.UserChatroom{
-		{UserID: userID, Name: users[0].Name, ChatroomID: newChatRoom.Id, IsJoined: true, LastJoinTime: &now, IsAdmin: true},
+		{UserID: userID, Name: users[0].Name, ChatroomID: newChatRoom.Id, IsJoined: true, LastJoinTime: &now, IsAdmin: true, IsOwner: true},
 	}
 	if requestBody.RecipientID != 0 {
 		userChatrooms = append(userChatrooms, models.UserChatroom{UserID: requestBody.RecipientID, Name: users[1].Name, ChatroomID: newChatRoom.Id, IsJoined: false, LastJoinTime: &now})
@@ -202,15 +202,15 @@ func CreateChatroom(w http.ResponseWriter, r *http.Request) {
 
 func DeleteChatroom(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
-	isAdmin := r.Context().Value("isAdmin").(bool)
+	isOwner := r.Context().Value("isOwner").(bool)
 
 	if id == "" {
 		http.Error(w, "Please provide a valid ID", http.StatusBadRequest)
 		return
 	}
 
-	if !isAdmin {
-		http.Error(w, "Unauthorized, user not an admin", http.StatusUnauthorized)
+	if !isOwner {
+		http.Error(w, "Unauthorized, user not the owner", http.StatusUnauthorized)
 		return
 	}
 
