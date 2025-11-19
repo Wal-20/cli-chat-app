@@ -54,9 +54,9 @@ func NewServer() {
 		),
 	))
 
-	mux.Handle("POST /api/users/chatrooms/{id}/make-admin/{userId}", middleware.AuthMiddleware(
+	mux.Handle("POST /api/users/chatrooms/{id}/promote/{userId}", middleware.AuthMiddleware(
 		middleware.ChatroomMiddleware(
-			http.HandlerFunc(handlers.MakeAdmin),
+			http.HandlerFunc(handlers.PromoteUser),
 		),
 	))
 

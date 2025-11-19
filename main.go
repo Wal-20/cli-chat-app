@@ -3,6 +3,7 @@ package main
 import (
     "github.com/Wal-20/cli-chat-app/internal/api"
     "github.com/Wal-20/cli-chat-app/internal/config"
+	"github.com/Wal-20/cli-chat-app/internal/cron"
     "log"
 )
 
@@ -15,5 +16,6 @@ func main() {
 
     api.NewServer()
 
+    cron.StartCronJobs()
 }
 

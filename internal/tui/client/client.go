@@ -407,7 +407,7 @@ func (c *APIClient) BanUser(chatroomID, userID string) error {
 }
 
 func (c *APIClient) MakeAdmin(chatroomID, userID string) error {
-	_, err := c.post(fmt.Sprintf("/users/chatrooms/%s/make-admin/%s", chatroomID, userID), nil)
+	_, err := c.post(fmt.Sprintf("/users/chatrooms/%s/promote/%s", chatroomID, userID), nil)
 	return err
 }
 

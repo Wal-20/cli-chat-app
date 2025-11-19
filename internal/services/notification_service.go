@@ -3,6 +3,7 @@ package services
 import (
 	"github.com/Wal-20/cli-chat-app/internal/config"
 	"github.com/Wal-20/cli-chat-app/internal/models"
+	"time"
 )
 
 // NotificationService coordinates retrieval of user notifications and related invite metadata.
@@ -20,4 +21,17 @@ func (s *NotificationService) GetUserNotifications(userID uint) (models.Notifica
 		return resp, err
 	}
 	return resp, nil
+}
+
+func RemoveOldNotifications() (int64, error) {
+	threshold := time.Now().AddDate(0, 0, -21) // older than 3 weeks
+
+	result := config.DB.
+		Where("created_at < ?", threshold).
+		Delete(&models.Notification{})
+
+	if result.Error != nil {
+		return 0, result.Error
+	}
+	return result.RowsAffected, nil
 }

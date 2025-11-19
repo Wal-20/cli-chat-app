@@ -474,7 +474,8 @@ func KickUser(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-func MakeAdmin(w http.ResponseWriter, r *http.Request) {
+// Owner makes user -> admin
+func PromoteUser(w http.ResponseWriter, r *http.Request) {
 	isOwner := r.Context().Value("isOwner").(bool)
 	userId := r.PathValue("userId")
 	chatroomId := r.PathValue("id")

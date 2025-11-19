@@ -26,7 +26,7 @@ fi
 SERVER_URL_B64=$(echo -n "$SERVER_URL" | base64)
 
 echo "Building server..."
-go build -o "$RELEASE_DIR/server" main.go
+go build -ldflags "-s -w" -o "$RELEASE_DIR/server" main.go
 chmod +x "$RELEASE_DIR/server"
 
 build_client() {
@@ -38,7 +38,7 @@ build_client() {
 
   echo "Building client for ${GOOS}/${GOARCH}..."
   GOOS=$GOOS GOARCH=$GOARCH go build \
-    -ldflags "-X github.com/Wal-20/cli-chat-app/internal/tui/client.DefaultServerURLB64=${SERVER_URL_B64}" \
+    -ldflags "-X github.com/Wal-20/cli-chat-app/internal/tui/client.DefaultServerURLB64=${SERVER_URL_B64} -s -w" \
     -o "$OUTFILE" ./internal/tui
 
   chmod +x "$OUTFILE"

@@ -342,6 +342,7 @@ func transferOwnership(chatroomId string) error {
 
 	// Assign new owner
 	newOwner.IsOwner = true
+	newOwner.IsAdmin = true
 	if err := config.DB.Save(&newOwner).Error; err != nil {
 		return err
 	}

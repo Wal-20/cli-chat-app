@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"github.com/Wal-20/cli-chat-app/internal/models"
 	"github.com/Wal-20/cli-chat-app/internal/repositories"
+	"github.com/Wal-20/cli-chat-app/internal/config"
+
 	"gorm.io/gorm"
 	"time"
 )
@@ -71,4 +73,18 @@ func (s *ChatroomService) LeaveChatroom(userID uint, chatroomID string, wasOwner
 		return map[string]any{"Status": "Chatroom deleted as last user left"}, nil
 	}
 	return map[string]any{"Status": "Left chatroom successfully", "data": uc}, nil
+}
+
+func RemoveOldUserChatrooms() (int64, error) {
+	threshold := time.Now().AddDate(0, 0, -21) // older than 3 weeks
+
+	result := config.DB.
+		Where("created_at < ? AND (is_banned = true OR is_joined = false)", threshold).
+		Delete(&models.UserChatroom{})
+
+	if result.Error != nil {
+		return 0, result.Error
+	}
+	
+	return result.RowsAffected, nil
 }

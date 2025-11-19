@@ -18,4 +18,5 @@ type Notification struct {
 
 type NotificationsResponse struct {
 	Notifications []Notification `json:"notifications"`
+	Deleted       int64          `json:"rows_deleted"`
 }
