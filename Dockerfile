@@ -4,6 +4,7 @@ FROM golang:1.23-alpine AS build
 WORKDIR /app
 
 RUN apk add --no-cache bash
+RUN apk add --no-cache upx
 
 # Copy dependency files first (for Docker layer caching)
 COPY go.mod go.sum ./

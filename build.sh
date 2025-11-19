@@ -16,6 +16,7 @@ fi
 
 RELEASE_DIR="./releases"
 mkdir -p "$RELEASE_DIR"
+rm ./releases/*
 
 if [[ -z "${SERVER_URL:-}" ]]; then
   echo "❌ SERVER_URL not found in environment or .env"
@@ -27,11 +28,14 @@ SERVER_URL_B64=$(echo -n "$SERVER_URL" | base64)
 
 echo "Building server..."
 go build -ldflags "-s -w" -o "$RELEASE_DIR/server" main.go
+
+upx --best --lzma "$RELEASE_DIR/server"
 chmod +x "$RELEASE_DIR/server"
 
 build_client() {
   local GOOS=$1
   local GOARCH=$2
+  local PACK=$3
   local OUTFILE="$RELEASE_DIR/chat-cli-${GOOS}-${GOARCH}"
 
   [[ "$GOOS" == "windows" ]] && OUTFILE="${OUTFILE}.exe"
@@ -41,13 +45,17 @@ build_client() {
     -ldflags "-X github.com/Wal-20/cli-chat-app/internal/tui/client.DefaultServerURLB64=${SERVER_URL_B64} -s -w" \
     -o "$OUTFILE" ./internal/tui
 
+  if [ "$PACK" = true ]; then
+    upx --best --lzma "$OUTFILE"
+  fi
   chmod +x "$OUTFILE"
 }
 
-build_client linux amd64
-build_client darwin arm64
-build_client darwin amd64
-build_client windows amd64
+build_client linux amd64 true
+build_client darwin arm64 false
+build_client darwin amd64 false
+build_client windows amd64 true
+
 
 echo "All builds completed successfully."
 echo "Binaries are in: $RELEASE_DIR"

@@ -2,9 +2,9 @@ package services
 
 import (
 	"fmt"
+	"github.com/Wal-20/cli-chat-app/internal/config"
 	"github.com/Wal-20/cli-chat-app/internal/models"
 	"github.com/Wal-20/cli-chat-app/internal/repositories"
-	"github.com/Wal-20/cli-chat-app/internal/config"
 
 	"gorm.io/gorm"
 	"time"
@@ -76,7 +76,7 @@ func (s *ChatroomService) LeaveChatroom(userID uint, chatroomID string, wasOwner
 }
 
 func RemoveOldUserChatrooms() (int64, error) {
-	threshold := time.Now().AddDate(0, 0, -21) // older than 3 weeks
+	threshold := time.Now().AddDate(0, 0, -60) // older than 2 months
 
 	result := config.DB.
 		Where("created_at < ? AND (is_banned = true OR is_joined = false)", threshold).
@@ -85,6 +85,7 @@ func RemoveOldUserChatrooms() (int64, error) {
 	if result.Error != nil {
 		return 0, result.Error
 	}
-	
+
 	return result.RowsAffected, nil
 }
+
