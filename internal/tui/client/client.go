@@ -328,28 +328,38 @@ func (c *APIClient) SendMessage(chatroomID, content string) (map[string]any, err
 }
 
 // SubscribeChatroom opens a websocket to receive live messages for a chatroom.
-// It returns a channel of messages and a cancel function to close the stream.
-func (c *APIClient) SubscribeChatroom(chatroomID uint) (<-chan models.MessageWithUser, func(), error) {
+// It returns:
+//   - a channel of incoming events,
+//   - a cancel function to close the stream,
+//   - and a send function to push events (e.g., typing / presence) to the server.
+func (c *APIClient) SubscribeChatroom(chatroomID uint) (<-chan models.WsEvent, func(), func(models.WsEvent) error, error) {
 	if c.baseURL == "" {
-		return nil, nil, fmt.Errorf("client not initialized")
+		return nil, nil, nil, fmt.Errorf("client not initialized")
 	}
+
 	u, err := url.Parse(c.baseURL)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
+
 	if u.Scheme == "https" {
 		u.Scheme = "wss"
 	} else {
 		u.Scheme = "ws"
 	}
+
 	u.Path = stdpath.Join(u.Path, fmt.Sprintf("chatrooms/%d/ws", chatroomID))
 
+	// Prepare headers
 	header := http.Header{}
 	if c.accessToken != "" {
 		header.Set("Authorization", "Bearer "+c.accessToken)
 	}
+
+	// Dial WS
 	conn, resp, err := websocket.DefaultDialer.Dial(u.String(), header)
 	if err != nil {
+		// Attempt automatic token refresh
 		if resp != nil && resp.StatusCode == 401 && c.refreshToken != "" {
 			if rerr := c.refreshTokens(); rerr == nil {
 				header = http.Header{}
@@ -359,16 +369,16 @@ func (c *APIClient) SubscribeChatroom(chatroomID uint) (<-chan models.MessageWit
 				conn, resp, err = websocket.DefaultDialer.Dial(u.String(), header)
 			}
 		}
+		// Still failed
 		if err != nil {
 			if resp != nil {
-				return nil, nil, fmt.Errorf("ws dial failed: %s", resp.Status)
+				return nil, nil, nil, fmt.Errorf("ws dial failed: %s", resp.Status)
 			}
-			return nil, nil, fmt.Errorf("ws dial error: %w", err)
+			return nil, nil, nil, fmt.Errorf("ws dial error: %w", err)
 		}
 	}
 
-	// channel to recieve messages from server
-	ch := make(chan models.MessageWithUser, 32)
+	ch := make(chan models.WsEvent, 32)
 	go func() {
 		defer close(ch)
 		for {
@@ -376,18 +386,30 @@ func (c *APIClient) SubscribeChatroom(chatroomID uint) (<-chan models.MessageWit
 			if err != nil {
 				return
 			}
-			var m models.MessageWithUser
-			if err := json.Unmarshal(data, &m); err == nil {
-				ch <- m
+
+			var evt models.WsEvent
+			if err := json.Unmarshal(data, &evt); err == nil {
+				ch <- evt
 			}
 		}
 	}()
 
 	cancel := func() {
-		_ = conn.WriteMessage(websocket.CloseMessage, websocket.FormatCloseMessage(websocket.CloseNormalClosure, "bye"))
+		_ = conn.WriteMessage(websocket.CloseMessage,
+			websocket.FormatCloseMessage(websocket.CloseNormalClosure, "bye"),
+		)
 		_ = conn.Close()
 	}
-	return ch, cancel, nil
+
+	send := func(evt models.WsEvent) error {
+		data, err := json.Marshal(evt)
+		if err != nil {
+			return err
+		}
+		return conn.WriteMessage(websocket.TextMessage, data)
+	}
+
+	return ch, cancel, send, nil
 }
 
 // Admin actions

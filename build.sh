@@ -16,7 +16,7 @@ fi
 
 RELEASE_DIR="./releases"
 mkdir -p "$RELEASE_DIR"
-rm ./releases/*
+rm -r ./releases
 
 if [[ -z "${SERVER_URL:-}" ]]; then
   echo "❌ SERVER_URL not found in environment or .env"

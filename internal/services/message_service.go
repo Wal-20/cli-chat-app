@@ -1,6 +1,8 @@
 package services
 
 import (
+	"encoding/json"
+
 	"github.com/Wal-20/cli-chat-app/internal/api/ws"
 	"github.com/Wal-20/cli-chat-app/internal/models"
 	"github.com/Wal-20/cli-chat-app/internal/repositories"
@@ -20,10 +22,19 @@ func (s *MessageService) SendMessage(senderID, chatroomID uint, content string) 
 	if err := s.messages.Create(&msg); err != nil {
 		return models.Message{}, "", err
 	}
-
 	user, err := s.users.FindByID(senderID)
 	if err == nil {
-		ws.BroadcastMessage(chatroomID, models.MessageWithUser{Content: msg.Content, CreatedAt: msg.CreatedAt, Username: user.Name})
+		payload := models.MessageWithUser{
+			Content:   msg.Content,
+			CreatedAt: msg.CreatedAt,
+			Username:  user.Name,
+		}
+		if data, err := json.Marshal(payload); err == nil {
+			ws.BroadcastMessage(chatroomID, models.WsEvent{
+				Type: "message",
+				Data: json.RawMessage(data),
+			})
+		}
 	}
 	return msg, user.Name, nil
 }

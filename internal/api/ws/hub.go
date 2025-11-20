@@ -79,9 +79,24 @@ func (c *Client) readPump() {
 	c.conn.SetReadLimit(1 << 20)
 	c.conn.SetCloseHandler(func(code int, text string) error { return nil })
 	for {
-		// We don't currently handle incoming messages over WS; just detect close.
-		if _, _, err := c.conn.ReadMessage(); err != nil {
+		// Handle incoming events from this client (e.g., typing, joined).
+		_, data, err := c.conn.ReadMessage()
+		if err != nil {
 			break
+		}
+
+		var evt models.WsEvent
+		if err := json.Unmarshal(data, &evt); err != nil {
+			// Ignore malformed input; keep the connection alive.
+			continue
+		}
+
+		switch evt.Type {
+		case "typing", "joined":
+			// Fan out ephemeral status events to everyone in the room.
+			c.room.broadcast <- data
+		default:
+			// Ignore other incoming event types for now.
 		}
 	}
 }
@@ -114,7 +129,7 @@ func GetRoom(id uint) *Room {
 }
 
 // BroadcastMessage sends the given message to all websocket clients in a room.
-func BroadcastMessage(roomID uint, message models.MessageWithUser) {
+func BroadcastMessage(roomID uint, message models.WsEvent) {
 	b, err := json.Marshal(message)
 	if err != nil {
 		log.Printf("ws marshal error: %v", err)

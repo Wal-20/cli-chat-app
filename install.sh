@@ -1,10 +1,12 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+# User curls the url defined in the server routes and this script is executed on their machine
+
 # Try to infer SERVER_URL from where the script was fetched
 if [[ -n "${BASH_SOURCE[0]}" && "${BASH_SOURCE[0]}" != */* ]]; then
   echo "Unable to infer SERVER_URL — this script must be fetched remotely (e.g. via curl)."
-  echo "Example: curl -fsSL https://your.fly.app/install.sh | bash"
+  echo "Example: curl -fsSL https://your.app/install.sh | bash"
   exit 1
 else
   SERVER_URL="$(dirname "$(curl -fsSL -I -o /dev/null -w %{url_effective} "$0")")"

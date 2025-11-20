@@ -1,7 +1,20 @@
 cli tool lib (https://cli.urfave.org/)
 
 ## Ideas: 
-text colors, ascii sticker like messages, file uploads
+- text colors, ascii sticker like messages, file uploads
+- File Previews (Inline)
+For example:
+Images → show ASCII preview
+PDFs → show metadata
+Text files → show first 10 lines
+
+- Encryption (E2E Mode): You can add optional end-to-end encryption; server only relays ciphertext, keys exchanged via Curve25519, messages encrypted with AES-GCM or ChaCha20, Serious cryptography, huge learning experience.
+- Admin screen with:
+users joined/left
+mutes
+kicks
+bans
+role changes
 
 ## Monitoring & Logging:
 user is given a log of all prev active chatrooms should they want to join back.
@@ -17,11 +30,9 @@ To prevent spamming or flooding in chatrooms, consider adding rate limits on the
 - (Chore) make the json tags in the backend models snake case, make sure they're the same as the ones in the client
 - Right now the deployment flow is passing the SERVER_URL into the dockerfile, check how that works for other methods
 
-- handle client errors more gracefully
-- Find a way to make binaries smaller
-
 - After deploying, add Github actions for pulling newest code to the vps and compiling binaries and displaying them in releases
 - Solve the issue where the token isn't read on a different device, it is still saved however,
 - Implement unique field constraints for models such as chatroom titles, user names
 - When starting the app logged in, the main chat model displays all chatrooms without pagination, not the case when starting not logged in
+- implement realtime Typing Indicators
 

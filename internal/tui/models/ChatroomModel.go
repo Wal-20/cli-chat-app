@@ -42,9 +42,11 @@ type ChatroomModel struct {
 	showSidebar        bool
 	sending            bool
 	flashMessage       string
+	wsStatusMessage    string
 	flashStyle         lipgloss.Style
-	wsChan             <-chan models.MessageWithUser
+	wsChan             <-chan models.WsEvent
 	wsCancel           func()
+	wsSend             func(models.WsEvent) error
 	// search state
 	searching   bool
 	searchInput textinput.Model
@@ -126,9 +128,11 @@ func NewChatroomModel(username string, userID uint, chatroom models.Chatroom, ap
 	}
 
 	// Attempt to subscribe to websocket updates for this room
-	if ch, cancel, err := apiClient.SubscribeChatroom(chatroom.Id); err == nil {
+	if ch, cancel, send, err := apiClient.SubscribeChatroom(chatroom.Id); err == nil {
 		model.wsChan = ch
 		model.wsCancel = cancel
+		model.wsSend = send
+		model.wsStatusMessage = "Live updates available"
 	} else {
 		model.flashMessage = fmt.Sprintf("Live updates unavailable: %s", err.Error())
 		model.flashStyle = styles.StatusErrorStyle
@@ -140,12 +144,21 @@ func NewChatroomModel(username string, userID uint, chatroom models.Chatroom, ap
 
 func (m ChatroomModel) Init() tea.Cmd {
 	if m.wsChan != nil {
-		return tea.Batch(textarea.Blink, listenWS(m.wsChan))
+		cmds := []tea.Cmd{textarea.Blink, m.listenWS(m.wsChan)}
+		if m.wsSend != nil {
+			// Announce that this user opened the chatroom.
+			cmds = append(cmds, makeUserStatusCmd(m.wsSend, "joined", m.username))
+		}
+		return tea.Batch(cmds...)
 	}
 	return textarea.Blink
 }
 
 func (m ChatroomModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	var typingCmd tea.Cmd
+	var leftCmd   tea.Cmd
+	// these two commands send updates to the ws channel when detecting user is typing / user left events
+
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
 		m.applyWindowSize(msg.Width, msg.Height)
@@ -164,8 +177,12 @@ func (m ChatroomModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.searchQuery = ""
 				return m, searchMessages(m.apiClient, m.chatroom.Id, "")
 			}
+			
 			if m.wsCancel != nil {
 				m.wsCancel()
+			}
+			if m.wsSend != nil {
+				leftCmd = makeUserStatusCmd(m.wsSend, "left", m.username)
 			}
 			// Ensure next main screen pulls fresh memberships
 			m.apiClient.InvalidateUserChatrooms()
@@ -247,6 +264,11 @@ func (m ChatroomModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 			chatroomID := m.chatroom.Id
 			return m, tea.Batch(sendMessage(m.apiClient, chatroomID, m.username, content))
+		default:
+			// Any other keypress in the main input area counts as "typing".
+			if !m.searching && m.wsSend != nil {
+				typingCmd = makeUserStatusCmd(m.wsSend, "typing", m.username)
+			}
 		}
 
 	case sendMessageResultMsg:
@@ -272,14 +294,32 @@ func (m ChatroomModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if len(m.messages) > 0 {
 			last := m.messages[len(m.messages)-1]
 			if strings.EqualFold(last.Username, msg.message.Username) && last.Content == msg.message.Content && last.CreatedAt.Equal(msg.message.CreatedAt) {
-				return m, listenWS(m.wsChan)
+				return m, m.listenWS(m.wsChan)
 			}
 		}
 		m.messages = append(m.messages, msg.message)
 		m.ensureParticipant(msg.message.Username)
 		m.refreshViewportContent(true)
 		// continue listening for the next websocket message
-		return m, listenWS(m.wsChan)
+		return m, m.listenWS(m.wsChan)
+	case wsTypingMsg:
+		// Ignore our own typing notifications; only show others.
+		if !strings.EqualFold(msg.name, m.username) {
+			m.wsStatusMessage = fmt.Sprintf("%v is typing...", msg.name)
+		}
+		return m, m.listenWS(m.wsChan)
+	case wsJoinedMsg:
+		// Ignore our own join notification to avoid noise.
+		if !strings.EqualFold(msg.name, m.username) {
+			m.wsStatusMessage = fmt.Sprintf("%v joined the chat", msg.name)
+			m.ensureParticipant(msg.name)
+			m.refreshViewportContent(true)
+		}
+		return m, m.listenWS(m.wsChan)
+	case wsLeftMsg:
+		m.wsStatusMessage = fmt.Sprintf("%v left the chat", msg.name)
+		m.refreshViewportContent(true)
+		return m, m.listenWS(m.wsChan)
 	case wsClosedMsg:
 		m.flashMessage = "Live updates disconnected"
 		m.flashStyle = styles.StatusErrorStyle
@@ -304,6 +344,13 @@ func (m ChatroomModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	var cmds []tea.Cmd
 
+	if typingCmd != nil {
+		cmds = append(cmds, typingCmd)
+	}
+	if leftCmd != nil {
+		cmds = append(cmds, leftCmd)
+	}
+
 	var viewportCmd tea.Cmd
 	m.viewport, viewportCmd = m.viewport.Update(msg)
 	cmds = append(cmds, viewportCmd)
@@ -325,9 +372,11 @@ func (m ChatroomModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, tea.Batch(cmds...)
 }
 
-// tea message types for websocket events
 type wsMessageMsg struct{ message models.MessageWithUser }
 type wsClosedMsg struct{}
+type wsTypingMsg struct{ name string }
+type wsJoinedMsg struct{ name string }
+type wsLeftMsg struct{ name string }
 
 // search results
 type searchMessagesResultMsg struct {
@@ -353,13 +402,62 @@ func (m ChatroomModel) leaveChatroom(api *client.APIClient, chatroomID uint) (te
 	return NewMainChatModel(m.username, m.userID, m.apiClient), nil
 }
 
-func listenWS(ch <-chan models.MessageWithUser) tea.Cmd {
+func (m *ChatroomModel) listenWS(ch <-chan models.WsEvent) tea.Cmd {
 	return func() tea.Msg {
-		msg, ok := <-ch
+		event, ok := <-ch
 		if !ok {
 			return wsClosedMsg{}
 		}
-		return wsMessageMsg{message: msg}
+		switch event.Type {
+		case "message":
+			var msg models.MessageWithUser
+			if err := json.Unmarshal(event.Data, &msg); err != nil {
+				return wsClosedMsg{}
+			}
+			return wsMessageMsg{message: msg}
+		case "typing":
+			var payload wsUserStatusPayload
+			if err := json.Unmarshal(event.Data, &payload); err != nil || payload.Username == "" {
+				return wsClosedMsg{}
+			}
+			return wsTypingMsg{name: payload.Username}
+		case "joined":
+			var payload wsUserStatusPayload
+			if err := json.Unmarshal(event.Data, &payload); err != nil || payload.Username == "" {
+				return wsClosedMsg{}
+			}
+			return wsJoinedMsg{name: payload.Username}
+		case "left":
+			var payload wsUserStatusPayload
+			if err := json.Unmarshal(event.Data, &payload); err != nil || payload.Username == "" {
+				return wsClosedMsg{}
+			}
+			return wsLeftMsg{name: payload.Username}
+		default:
+			return wsClosedMsg{}
+		}
+	}
+}
+
+type wsUserStatusPayload struct {
+	Username string `json:"username"`
+}
+
+func makeUserStatusCmd(send func(models.WsEvent) error, eventType, username string) tea.Cmd {
+	if send == nil || strings.TrimSpace(username) == "" {
+		return nil
+	}
+	return func() tea.Msg {
+		payload := wsUserStatusPayload{Username: username}
+		data, err := json.Marshal(payload)
+		if err != nil {
+			return nil
+		}
+		_ = send(models.WsEvent{
+			Type: eventType,
+			Data: json.RawMessage(data),
+		})
+		return nil
 	}
 }
 
@@ -438,7 +536,7 @@ func (m ChatroomModel) View() string {
 	helpItems = append(helpItems, styles.RenderKeyBinding("Ctrl + c", "Quit"))
 	help := strings.Join(helpItems, styles.HelpStyle.Render("  "))
 
-	footerContent := statusStyle.Render(info) + "\n" + styles.HelpStyle.Render(help)
+	footerContent := statusStyle.Render(m.wsStatusMessage) + "\n" + statusStyle.Render(info) + "\n" + styles.HelpStyle.Render(help)
 	footer := styles.StatusBarStyle.Render(footerContent)
 
 	layout := lipgloss.JoinVertical(
