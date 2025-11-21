@@ -16,6 +16,8 @@ fi
 
 RELEASE_DIR="./releases"
 mkdir -p "$RELEASE_DIR"
+
+# no need for this if you're not using the compression tool
 rm -r ./releases
 
 if [[ -z "${SERVER_URL:-}" ]]; then

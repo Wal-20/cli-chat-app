@@ -47,10 +47,22 @@ type ChatroomModel struct {
 	wsChan             <-chan models.WsEvent
 	wsCancel           func()
 	wsSend             func(models.WsEvent) error
-	// search state
-	searching   bool
-	searchInput textinput.Model
-	searchQuery string
+	searching          bool
+	typing             bool
+	typingSeq          int
+	lastTypingSent     time.Time
+	searchInput        textinput.Model
+	searchQuery        string
+}
+
+// tea.Cmds to detect typing events. We track a sequence number so that
+// only the timers for the most recent typing activity are honored.
+type typingStoppedMsg struct{ seq int } // triggers clearing after inactivity
+
+func startTypingStoppedTimer(seq int) tea.Cmd {
+	return tea.Tick(5*time.Second, func(t time.Time) tea.Msg {
+		return typingStoppedMsg{seq: seq}
+	})
 }
 
 func NewChatroomModel(username string, userID uint, chatroom models.Chatroom, apiClient *client.APIClient) ChatroomModel {
@@ -132,7 +144,6 @@ func NewChatroomModel(username string, userID uint, chatroom models.Chatroom, ap
 		model.wsChan = ch
 		model.wsCancel = cancel
 		model.wsSend = send
-		model.wsStatusMessage = "Live updates available"
 	} else {
 		model.flashMessage = fmt.Sprintf("Live updates unavailable: %s", err.Error())
 		model.flashStyle = styles.StatusErrorStyle
@@ -156,8 +167,9 @@ func (m ChatroomModel) Init() tea.Cmd {
 
 func (m ChatroomModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	var typingCmd tea.Cmd
-	var leftCmd   tea.Cmd
 	// these two commands send updates to the ws channel when detecting user is typing / user left events
+
+	var cmds []tea.Cmd
 
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
@@ -177,12 +189,14 @@ func (m ChatroomModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.searchQuery = ""
 				return m, searchMessages(m.apiClient, m.chatroom.Id, "")
 			}
-			
+
+			if m.wsSend != nil {
+				if cmd := makeUserStatusCmd(m.wsSend, "left", m.username); cmd != nil {
+					_ = cmd()
+				}
+			}
 			if m.wsCancel != nil {
 				m.wsCancel()
-			}
-			if m.wsSend != nil {
-				leftCmd = makeUserStatusCmd(m.wsSend, "left", m.username)
 			}
 			// Ensure next main screen pulls fresh memberships
 			m.apiClient.InvalidateUserChatrooms()
@@ -267,7 +281,20 @@ func (m ChatroomModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		default:
 			// Any other keypress in the main input area counts as "typing".
 			if !m.searching && m.wsSend != nil {
-				typingCmd = makeUserStatusCmd(m.wsSend, "typing", m.username)
+				// user hit a key → bump typing sequence and reset "stopped typing" timer
+				m.typingSeq++
+				seq := m.typingSeq
+				cmds = append(cmds, startTypingStoppedTimer(seq))
+
+				if !m.typing {
+					// First typing event
+					typingCmd = makeUserStatusCmd(m.wsSend, "typing", m.username)
+					m.typing = true
+					m.lastTypingSent = time.Now()
+				} else if time.Since(m.lastTypingSent) > 2*time.Second {
+					typingCmd = makeUserStatusCmd(m.wsSend, "typing", m.username)
+					m.lastTypingSent = time.Now()
+				}
 			}
 		}
 
@@ -303,9 +330,10 @@ func (m ChatroomModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// continue listening for the next websocket message
 		return m, m.listenWS(m.wsChan)
 	case wsTypingMsg:
-		// Ignore our own typing notifications; only show others.
 		if !strings.EqualFold(msg.name, m.username) {
 			m.wsStatusMessage = fmt.Sprintf("%v is typing...", msg.name)
+		} else {
+			m.wsStatusMessage = "typing..."
 		}
 		return m, m.listenWS(m.wsChan)
 	case wsJoinedMsg:
@@ -340,15 +368,20 @@ func (m ChatroomModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m.refreshViewportContent(false)
 		return m, nil
+	case typingStoppedMsg:
+		// Ignore stale timers for older typing sequences.
+		if msg.seq != m.typingSeq {
+			return m, nil
+		}
+		// User has been idle for the full inactivity window; clear typing state
+		// and the status message in one step.
+		m.typing = false
+		m.wsStatusMessage = ""
+		return m, nil
 	}
-
-	var cmds []tea.Cmd
 
 	if typingCmd != nil {
 		cmds = append(cmds, typingCmd)
-	}
-	if leftCmd != nil {
-		cmds = append(cmds, leftCmd)
 	}
 
 	var viewportCmd tea.Cmd
@@ -393,6 +426,14 @@ func searchMessages(api *client.APIClient, chatroomID uint, query string) tea.Cm
 }
 
 func (m ChatroomModel) leaveChatroom(api *client.APIClient, chatroomID uint) (tea.Model, tea.Cmd) {
+	if m.wsSend != nil {
+		if cmd := makeUserStatusCmd(m.wsSend, "left", m.username); cmd != nil {
+			_ = cmd()
+		}
+	}
+	if m.wsCancel != nil {
+		m.wsCancel()
+	}
 	err := api.LeaveChatroom(strconv.FormatUint(uint64(chatroomID), 10))
 	if err != nil {
 		m.flashMessage = "Failed to Leave Chatroom"
@@ -536,7 +577,10 @@ func (m ChatroomModel) View() string {
 	helpItems = append(helpItems, styles.RenderKeyBinding("Ctrl + c", "Quit"))
 	help := strings.Join(helpItems, styles.HelpStyle.Render("  "))
 
-	footerContent := statusStyle.Render(m.wsStatusMessage) + "\n" + statusStyle.Render(info) + "\n" + styles.HelpStyle.Render(help)
+	// Render websocket status (typing / join/left / connection) on its own line.
+	wsLine := m.wsStatusMessage
+
+	footerContent := styles.WsStatusStyle.Render(wsLine) + "\n" + statusStyle.Render(info) + "\n" + styles.HelpStyle.Render(help)
 	footer := styles.StatusBarStyle.Render(footerContent)
 
 	layout := lipgloss.JoinVertical(

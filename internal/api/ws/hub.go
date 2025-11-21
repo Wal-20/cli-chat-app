@@ -92,7 +92,7 @@ func (c *Client) readPump() {
 		}
 
 		switch evt.Type {
-		case "typing", "joined":
+		case "typing", "joined", "left":
 			// Fan out ephemeral status events to everyone in the room.
 			c.room.broadcast <- data
 		default:

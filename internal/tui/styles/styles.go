@@ -32,17 +32,18 @@ var (
 	// Status/footers with no backgrounds
 	StatusBarStyle     = lipgloss.NewStyle()
 	StatusMessageStyle = lipgloss.NewStyle().Foreground(textMutedColor)
-	StatusInfoStyle    = StatusMessageStyle.Copy().Foreground(secondaryColor)
-	StatusSuccessStyle = StatusMessageStyle.Copy().Foreground(successColor)
-	StatusErrorStyle   = StatusMessageStyle.Copy().Foreground(dangerColor)
+	StatusInfoStyle    = StatusMessageStyle.Foreground(secondaryColor)
+	StatusSuccessStyle = StatusMessageStyle.Foreground(successColor)
+	StatusErrorStyle   = StatusMessageStyle.Foreground(dangerColor)
+	WsStatusStyle      = SubtitleStyle.Margin(1, 0)
 
 	// Card and pane wrappers simplified (no borders/backgrounds)
 	CardStyle         = lipgloss.NewStyle().Width(56)
 	CardTitleStyle    = lipgloss.NewStyle().Bold(true)
 	CardSubtitleStyle = lipgloss.NewStyle().Foreground(textMutedColor)
 	PaneStyle         = lipgloss.NewStyle()
-	ActivePaneStyle   = PaneStyle.Copy().Bold(true)
-	InactivePaneStyle = PaneStyle.Copy()
+	ActivePaneStyle   = PaneStyle.Bold(true)
+	InactivePaneStyle = PaneStyle
 	PaneHeadingStyle  = lipgloss.NewStyle().Bold(true)
 
 	// Lists
@@ -54,7 +55,7 @@ var (
 	ConversationWrapperStyle = lipgloss.NewStyle() // width will be applied by views
 	MessageContainerStyle    = lipgloss.NewStyle().MarginBottom(1)
 	MessageBubbleStyle       = lipgloss.NewStyle() // no border/background
-	MessageBubbleSelfStyle   = MessageBubbleStyle.Copy().Foreground(primaryColor)
+	MessageBubbleSelfStyle   = MessageBubbleStyle.Foreground(primaryColor)
 	MessageAuthorStyle       = lipgloss.NewStyle().Bold(true)
 	MessageAuthorSelfStyle   = lipgloss.NewStyle().Bold(true).Foreground(primaryColor)
 	MessageTimestampStyle    = lipgloss.NewStyle().Foreground(textMutedColor)
@@ -66,9 +67,9 @@ var (
 	SidebarTitleStyle          = lipgloss.NewStyle().Bold(true)
 	ParticipantLineStyle       = lipgloss.NewStyle()
 	ParticipantBadgeStyle      = lipgloss.NewStyle().Foreground(textMutedColor)
-	ParticipantBadgeOwnerStyle = ParticipantBadgeStyle.Copy().Foreground(primaryColor)
-	ParticipantBadgeAdminStyle = ParticipantBadgeStyle.Copy().Foreground(secondaryColor)
-	ParticipantBadgeYouStyle   = ParticipantBadgeStyle.Copy().Foreground(successColor)
+	ParticipantBadgeOwnerStyle = ParticipantBadgeStyle.Foreground(primaryColor)
+	ParticipantBadgeAdminStyle = ParticipantBadgeStyle.Foreground(secondaryColor)
+	ParticipantBadgeYouStyle   = ParticipantBadgeStyle.Foreground(successColor)
 
 	// Inputs simplified: no borders/backgrounds
 	InputAreaStyle          = lipgloss.NewStyle()

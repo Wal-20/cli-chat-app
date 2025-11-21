@@ -8,7 +8,7 @@ Images → show ASCII preview
 PDFs → show metadata
 Text files → show first 10 lines
 
-- Encryption (E2E Mode): You can add optional end-to-end encryption; server only relays ciphertext, keys exchanged via Curve25519, messages encrypted with AES-GCM or ChaCha20, Serious cryptography, huge learning experience.
+- Encryption (E2E Mode): You can add optional end-to-end encryption; server only relays ciphertext, keys exchanged via Curve25519, messages encrypted with AES-GCM or ChaCha20
 - Admin screen with:
 users joined/left
 mutes
@@ -34,5 +34,5 @@ To prevent spamming or flooding in chatrooms, consider adding rate limits on the
 - Solve the issue where the token isn't read on a different device, it is still saved however,
 - Implement unique field constraints for models such as chatroom titles, user names
 - When starting the app logged in, the main chat model displays all chatrooms without pagination, not the case when starting not logged in
-- implement realtime Typing Indicators
-
+- implement realtime Typing Indicators, send only one ws event, sleep for 4 seconds, remove 'user is typing' after 6 seconds of not sending a ws typing event:
+-- client sends wsTyping event, set a 6 sec timer to remove 'user is typing..' -> set state isTyping to true, while true don't send wsTypingEvent -> sleep for 4 seconds then set isTyping = false

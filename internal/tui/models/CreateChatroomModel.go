@@ -141,5 +141,6 @@ func (m CreateChatroomModel) UpdateCreated(msg createdChatroomMsg) (tea.Model, t
 		return m, nil
 	}
 	// jump right into the new room
-	return NewChatroomModel(m.username, m.userID, msg.chatroom, m.apiClient), nil
+	cm := NewChatroomModel(m.username, m.userID, msg.chatroom, m.apiClient)
+	return cm, cm.Init()
 }

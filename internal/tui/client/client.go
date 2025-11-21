@@ -378,6 +378,7 @@ func (c *APIClient) SubscribeChatroom(chatroomID uint) (<-chan models.WsEvent, f
 		}
 	}
 
+	// read from ws server in goroutine
 	ch := make(chan models.WsEvent, 32)
 	go func() {
 		defer close(ch)
@@ -401,6 +402,7 @@ func (c *APIClient) SubscribeChatroom(chatroomID uint) (<-chan models.WsEvent, f
 		_ = conn.Close()
 	}
 
+	// return a function to be used in client to write to ws server
 	send := func(evt models.WsEvent) error {
 		data, err := json.Marshal(evt)
 		if err != nil {

@@ -250,7 +250,8 @@ func (m MainChatModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "enter":
 			if m.activeList == 0 {
 				if item, ok := m.userChatrooms.SelectedItem().(chatroomItem); ok {
-					return NewChatroomModel(m.username, m.userID, item.chatroom, m.apiClient), nil
+					cm := NewChatroomModel(m.username, m.userID, item.chatroom, m.apiClient)
+					return cm, cm.Init()
 				}
 			} else {
 				if item, ok := m.publicChatrooms.SelectedItem().(chatroomItem); ok {
@@ -259,7 +260,8 @@ func (m MainChatModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 						m.flashStyle = styles.StatusErrorStyle
 						return m, nil
 					}
-					return NewChatroomModel(m.username, m.userID, item.chatroom, m.apiClient), nil
+					cm := NewChatroomModel(m.username, m.userID, item.chatroom, m.apiClient)
+					return cm, cm.Init()
 				}
 			}
 		case "q", "ctrl+c":

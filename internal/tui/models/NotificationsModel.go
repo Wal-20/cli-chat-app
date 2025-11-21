@@ -132,7 +132,8 @@ func (m NotificationsModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		// Navigate into the joined chatroom if we could parse it; otherwise stay
 		if msg.room.Id != 0 {
-			return NewChatroomModel(m.username, m.userID, msg.room, m.apiClient), nil
+			cm := NewChatroomModel(m.username, m.userID, msg.room, m.apiClient)
+			return cm, cm.Init()
 		}
 		m.flashMessage = "Joined"
 		m.flashStyle = styles.StatusSuccessStyle
