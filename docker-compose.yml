@@ -22,6 +22,8 @@ services:
     ports:
       - "8080:8080"
     restart: unless-stopped
+    networks:
+        - chat-net
 
   db:
     image: mariadb:latest
@@ -36,6 +38,8 @@ services:
       - mariadb_data:/var/lib/mysql
     ports:
       - "3306:3306"
+    networks:
+        - chat-net
 
 volumes:
   mariadb_data:

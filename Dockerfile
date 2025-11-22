@@ -13,7 +13,7 @@ RUN go mod download
 
 COPY . .
 
-RUN chmod +x build.sh install.sh
+RUN chmod +x build.sh
 
 ARG SERVER_URL
 ENV SERVER_URL=${SERVER_URL}
@@ -26,9 +26,8 @@ FROM alpine:latest
 
 WORKDIR /app
 
-# Copy built binaries, install script, and releases
+# Copy built binaries and releases
 COPY --from=build /app/releases ./releases
-COPY --from=build /app/install.sh .
 COPY --from=build /app/releases/server ./server
 
 # Expose port for HTTP
