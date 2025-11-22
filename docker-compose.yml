@@ -8,11 +8,13 @@ services:
       args:
         SERVER_URL: ${SERVER_URL}
     container_name: chatapp-server
+    env_file:
+      - .env
     environment:
       SERVER_URL: ${SERVER_URL}
       SERVICE_URI: ${SERVICE_URI}
       db_name: ${db_name}
-      db_host: ${db_host}
+      db_host: db
       db_port: ${db_port}
       db_username: ${db_username}
       db_password: ${db_password}
@@ -23,7 +25,7 @@ services:
       - "8080:8080"
     restart: unless-stopped
     networks:
-        - chat-net
+      - chatnet
 
   db:
     image: mariadb:latest
@@ -36,10 +38,12 @@ services:
       MARIADB_PASSWORD: ${db_password}
     volumes:
       - mariadb_data:/var/lib/mysql
-    ports:
-      - "3306:3306"
     networks:
-        - chat-net
+      - chatnet
 
 volumes:
   mariadb_data:
+
+networks:
+  chatnet:
+    driver: bridge

@@ -5,6 +5,7 @@ WORKDIR /app
 
 RUN apk add --no-cache bash
 RUN apk add --no-cache upx
+RUN apk add --no-cache tzdata
 
 # Copy dependency files first (for Docker layer caching)
 COPY go.mod go.sum ./
@@ -19,7 +20,7 @@ ARG SERVER_URL
 ENV SERVER_URL=${SERVER_URL}
 
 # Build server and client binaries, no-source depends on server secrets, or args passed into build, instead of .env file in container
-RUN ./build.sh --no-source
+RUN ./build.sh
 
 # --- Runtime stage ---
 FROM alpine:latest
