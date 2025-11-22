@@ -23,9 +23,21 @@ func NewServer() {
 		})
 	})
 
-	// Install Client Route
-	mux.HandleFunc("/install.sh", func(w http.ResponseWriter, r *http.Request) {
-		http.ServeFile(w, r, "./install.sh")
+	// Install Client routes
+	mux.HandleFunc("/download/windows", func(w http.ResponseWriter, r *http.Request) {
+		http.ServeFile(w, r, "./releases/chat-cli-windows-amd64.exe")
+	})
+
+	mux.HandleFunc("/download/linux", func(w http.ResponseWriter, r *http.Request) {
+		http.ServeFile(w, r, "./releases/chat-cli-linux-amd64")
+	})
+
+	mux.HandleFunc("/download/macos-amd64", func(w http.ResponseWriter, r *http.Request) {
+		http.ServeFile(w, r, "./releases/chat-cli-darwin-amd64")
+	})
+
+	mux.HandleFunc("/download/macos-arm64", func(w http.ResponseWriter, r *http.Request) {
+		http.ServeFile(w, r, "./releases/chat-cli-darwin-arm64")
 	})
 
 	// User routes
