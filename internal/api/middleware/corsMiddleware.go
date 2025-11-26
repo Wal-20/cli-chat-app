@@ -5,8 +5,9 @@ import (
 	"slices"
 )
 
-var originAllowList = []string {
-	"http://localhost:5173",
+var originAllowList = []string{
+	//"http://localhost:5173",
+	"*",
 }
 
 func CheckCORS(next http.Handler) http.Handler {

@@ -310,7 +310,6 @@ func (m ChatroomModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			msg.message.Username = m.username
 		}
 
-		m.messages = append(m.messages, msg.message)
 		m.ensureParticipant(msg.message.Username)
 		m.flashMessage = fmt.Sprintf("Delivered at %s", time.Now().Format("15:04:05"))
 		m.flashStyle = styles.StatusSuccessStyle

@@ -1,5 +1,3 @@
-version: "3.9"
-
 services:
   app:
     build:
@@ -25,11 +23,11 @@ services:
       - "8080:8080"
     restart: unless-stopped
     networks:
-      - chatnet
+      - chat-net
 
   db:
     image: mariadb:latest
-    container_name: chatapp-db
+    container_name: local-mariadb
     restart: unless-stopped
     environment:
       MARIADB_ROOT_PASSWORD: ${db_password}
@@ -39,11 +37,11 @@ services:
     volumes:
       - mariadb_data:/var/lib/mysql
     networks:
-      - chatnet
+      - chat-net
 
 volumes:
   mariadb_data:
 
 networks:
-  chatnet:
+  chat-net:
     driver: bridge

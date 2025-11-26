@@ -1,4 +1,4 @@
-**/.env
+**/.env*
 **/*.exe
 **/build-errors.log
 **/node_modules/
