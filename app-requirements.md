@@ -31,6 +31,5 @@ To prevent spamming or flooding in chatrooms, consider adding rate limits on the
 - Right now the deployment flow is passing the SERVER_URL into the dockerfile, check how that works for other methods
 
 - After deploying, add Github actions for pulling newest code to the vps and compiling binaries and displaying them in releases
-- Solve the issue where the token isn't read on a different device, it is still saved however,
 - Implement unique field constraints for models such as chatroom titles, user names
 - When starting the app logged in, the main chat model displays all chatrooms without pagination, not the case when starting not logged in

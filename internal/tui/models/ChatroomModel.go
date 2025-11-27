@@ -311,6 +311,7 @@ func (m ChatroomModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 
 		m.ensureParticipant(msg.message.Username)
+		m.wsStatusMessage = ""
 		m.flashMessage = fmt.Sprintf("Delivered at %s", time.Now().Format("15:04:05"))
 		m.flashStyle = styles.StatusSuccessStyle
 		m.refreshViewportContent(false)
