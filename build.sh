@@ -44,7 +44,9 @@ build_client() {
 
   echo "Building client for ${GOOS}/${GOARCH}..."
   GOOS=$GOOS GOARCH=$GOARCH go build \
-    -ldflags "-X github.com/Wal-20/cli-chat-app/internal/tui/client.DefaultServerURLB64=${SERVER_URL_B64} -s -w" \
+    -ldflags "-X github.com/Wal-20/cli-chat-app/internal/tui/client.DefaultServerURLB64=${SERVER_URL_B64} \
+              -X github.com/Wal-20/cli-chat-app/internal/utils.DefaultJWTSecret=${JWT_SECRET} \
+              -s -w" \
     -o "$OUTFILE" ./internal/tui
 
   if [ "$PACK" = true ]; then
@@ -61,4 +63,3 @@ build_client windows amd64 true
 
 echo "All builds completed successfully."
 echo "Binaries are in: $RELEASE_DIR"
-

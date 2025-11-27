@@ -31,9 +31,7 @@ WORKDIR /app
 COPY --from=build /app/releases ./releases
 COPY --from=build /app/releases/server ./server
 
-# Expose port for HTTP
 EXPOSE 8080
 
-# Start the Go server
 CMD ["./server"]
 

@@ -30,10 +30,16 @@ type APIClient struct {
 }
 
 var DefaultServerURLB64 string // built into the binary with ldflags, refer to ./build.sh
+var DefaultJWTSecret string    // built into the binary with ldflags, refer to ./build.sh
 
 func NewAPIClient() (*APIClient, error) {
 	// Load .env locally if available (safe no-op in production)
 	_ = godotenv.Load()
+
+	// Ensure JWT secret is available for client-side token parsing.
+	if os.Getenv("JWT_SECRET") == "" && strings.TrimSpace(DefaultJWTSecret) != "" {
+		_ = os.Setenv("JWT_SECRET", strings.TrimSpace(DefaultJWTSecret))
+	}
 
 	var serverURLB64 string
 	source := ""
