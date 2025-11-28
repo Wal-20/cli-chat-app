@@ -278,6 +278,8 @@ func (m ChatroomModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 			chatroomID := m.chatroom.Id
 			return m, tea.Batch(sendMessage(m.apiClient, chatroomID, m.username, content))
+		case "up", "down":
+
 		default:
 			// Any other keypress in the main input area counts as "typing".
 			if !m.searching && m.wsSend != nil {
