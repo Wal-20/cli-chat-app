@@ -333,11 +333,14 @@ func (m ChatroomModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// continue listening for the next websocket message
 		return m, m.listenWS(m.wsChan)
 	case wsTypingQueueMsg:
-		if len(msg.users) > 2 {
-			m.wsStatusMessage = fmt.Sprintf("%s, %s, and %d more are typing...", msg.users[0], msg.users[1], len(msg.users)-2)
-		} else if len(msg.users) == 1 {
+		switch n := len(msg.users); {
+		case n > 2:
+			m.wsStatusMessage = fmt.Sprintf("%s, %s, and %d more are typing...", msg.users[0], msg.users[1], n-2)
+		case n == 2:
+			m.wsStatusMessage = fmt.Sprintf("%s and %s are typing...", msg.users[0], msg.users[1])
+		case n == 1:
 			m.wsStatusMessage = fmt.Sprintf("%s is typing...", msg.users[0])
-		} else if len(msg.users) == 0 {
+		default:
 			m.wsStatusMessage = ""
 		}
 		return m, m.listenWS(m.wsChan)
