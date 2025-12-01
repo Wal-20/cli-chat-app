@@ -277,7 +277,8 @@ func (m ChatroomModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.flashStyle = styles.StatusInfoStyle
 
 			chatroomID := m.chatroom.Id
-			return m, tea.Batch(sendMessage(m.apiClient, chatroomID, m.username, content))
+			typingStoppedCmd := makeUserStatusCmd(m.wsSend, "stoppedTyping", m.username)
+			return m, tea.Batch(sendMessage(m.apiClient, chatroomID, m.username, content), typingStoppedCmd)
 		case "up", "down":
 
 		default:
@@ -317,7 +318,7 @@ func (m ChatroomModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.flashMessage = fmt.Sprintf("Delivered at %s", time.Now().Format("15:04:05"))
 		m.flashStyle = styles.StatusSuccessStyle
 		m.refreshViewportContent(false)
-		return m, nil
+		return m, m.listenWS(m.wsChan)
 	case wsMessageMsg:
 		// Append incoming message, ensure participant, keep scroll position
 		if len(m.messages) > 0 {
@@ -331,11 +332,13 @@ func (m ChatroomModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.refreshViewportContent(true)
 		// continue listening for the next websocket message
 		return m, m.listenWS(m.wsChan)
-	case wsTypingMsg:
-		if !strings.EqualFold(msg.name, m.username) {
-			m.wsStatusMessage = fmt.Sprintf("%v is typing...", msg.name)
-		} else {
-			m.wsStatusMessage = "typing..."
+	case wsTypingQueueMsg:
+		if len(msg.users) > 2 {
+			m.wsStatusMessage = fmt.Sprintf("%s, %s, and %d more are typing...", msg.users[0], msg.users[1], len(msg.users)-2)
+		} else if len(msg.users) == 1 {
+			m.wsStatusMessage = fmt.Sprintf("%s is typing...", msg.users[0])
+		} else if len(msg.users) == 0 {
+			m.wsStatusMessage = ""
 		}
 		return m, m.listenWS(m.wsChan)
 	case wsJoinedMsg:
@@ -377,9 +380,11 @@ func (m ChatroomModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		// User has been idle for the full inactivity window; clear typing state
 		// and the status message in one step.
+		// send event for server to pop name from event stack
 		m.typing = false
 		m.wsStatusMessage = ""
-		return m, nil
+		cmd := makeUserStatusCmd(m.wsSend, "stoppedTyping", m.username)
+		return m, cmd
 	}
 
 	if typingCmd != nil {
@@ -409,7 +414,7 @@ func (m ChatroomModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 type wsMessageMsg struct{ message models.MessageWithUser }
 type wsClosedMsg struct{}
-type wsTypingMsg struct{ name string }
+type wsTypingQueueMsg struct{ users []string }
 type wsJoinedMsg struct{ name string }
 type wsLeftMsg struct{ name string }
 
@@ -458,12 +463,12 @@ func (m *ChatroomModel) listenWS(ch <-chan models.WsEvent) tea.Cmd {
 				return wsClosedMsg{}
 			}
 			return wsMessageMsg{message: msg}
-		case "typing":
-			var payload wsUserStatusPayload
-			if err := json.Unmarshal(event.Data, &payload); err != nil || payload.Username == "" {
+		case "typing_queue":
+			var users []string
+			if err := json.Unmarshal(event.Data, &users); err != nil {
 				return wsClosedMsg{}
 			}
-			return wsTypingMsg{name: payload.Username}
+			return wsTypingQueueMsg{users: users}
 		case "joined":
 			var payload wsUserStatusPayload
 			if err := json.Unmarshal(event.Data, &payload); err != nil || payload.Username == "" {

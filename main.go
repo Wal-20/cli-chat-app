@@ -1,21 +1,18 @@
 package main
 
 import (
-    "github.com/Wal-20/cli-chat-app/internal/api"
-    "github.com/Wal-20/cli-chat-app/internal/config"
+	"github.com/Wal-20/cli-chat-app/internal/api"
+	"github.com/Wal-20/cli-chat-app/internal/config"
 	"github.com/Wal-20/cli-chat-app/internal/cron"
-    "log"
+	"log"
 )
 
 func main() {
+	err := config.InitDB()
+	if err != nil {
+		log.Fatal("DB not initialized")
+	}
 
-    err := config.InitDB()
-    if err != nil {
-        log.Fatal("DB not initialized")
-    }
-
-    api.NewServer()
-
-    cron.StartCronJobs()
+	api.NewServer()
+	cron.StartCronJobs()
 }
-

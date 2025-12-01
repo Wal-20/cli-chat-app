@@ -5,6 +5,7 @@ import (
 	"log"
 	"net/http"
 	"strconv"
+	"strings"
 	"sync"
 
 	"github.com/Wal-20/cli-chat-app/internal/models"
@@ -23,20 +24,22 @@ func getHub() *Hub { return hub }
 
 // Room maintains active clients and broadcasts messages to them.
 type Room struct {
-	id         uint
-	clients    map[*Client]bool
-	register   chan *Client
-	unregister chan *Client
-	broadcast  chan []byte
+	id           uint
+	clients      map[*Client]bool
+	register     chan *Client
+	unregister   chan *Client
+	broadcast    chan []byte
+	typingEventQ typingEventQueue
 }
 
 func newRoom(id uint) *Room {
 	r := &Room{
-		id:         id,
-		clients:    make(map[*Client]bool),
-		register:   make(chan *Client),
-		unregister: make(chan *Client),
-		broadcast:  make(chan []byte, 256),
+		id:           id,
+		clients:      make(map[*Client]bool),
+		register:     make(chan *Client),
+		unregister:   make(chan *Client),
+		broadcast:    make(chan []byte, 256),
+		typingEventQ: NewQueue(),
 	}
 	go r.run()
 	return r
@@ -71,6 +74,66 @@ type Client struct {
 	send chan []byte
 }
 
+type typingEventQueue []string
+
+func NewQueue() typingEventQueue {
+	return typingEventQueue{}
+}
+
+func (q *typingEventQueue) add(username string) {
+	username = strings.TrimSpace(username)
+	if username == "" {
+		return
+	}
+	for _, existing := range *q {
+		if existing == username {
+			return
+		}
+	}
+	*q = append(*q, username)
+}
+
+func (q *typingEventQueue) remove(username string) {
+	username = strings.TrimSpace(username)
+	if username == "" {
+		return
+	}
+	for i, existing := range *q {
+		if existing == username {
+			*q = append((*q)[:i], (*q)[i+1:]...)
+			return
+		}
+	}
+}
+
+func (q typingEventQueue) marshalUsernames() ([]byte, error) {
+	list := make([]string, len(q))
+	copy(list, q)
+	return json.Marshal(list)
+}
+
+func (r *Room) broadcastTypingQueue() {
+	payload, err := r.typingEventQ.marshalUsernames()
+	if err != nil {
+		log.Printf("ws typing queue marshal error: %v", err)
+		return
+	}
+	evt := models.WsEvent{
+		Type: "typing_queue",
+		Data: json.RawMessage(payload),
+	}
+	b, err := json.Marshal(evt)
+	if err != nil {
+		log.Printf("ws typing queue event marshal error: %v", err)
+		return
+	}
+	r.broadcast <- b
+}
+
+type wsUserStatusPayload struct {
+	Username string `json:"username"`
+}
+
 func (c *Client) readPump() {
 	defer func() {
 		c.room.unregister <- c
@@ -92,7 +155,21 @@ func (c *Client) readPump() {
 		}
 
 		switch evt.Type {
-		case "typing", "joined", "left":
+		case "typing":
+			var payload wsUserStatusPayload
+			if err := json.Unmarshal(evt.Data, &payload); err != nil || payload.Username == "" {
+				continue
+			}
+			c.room.typingEventQ.add(payload.Username)
+			c.room.broadcastTypingQueue()
+		case "stoppedTyping":
+			var payload wsUserStatusPayload
+			if err := json.Unmarshal(evt.Data, &payload); err != nil || payload.Username == "" {
+				continue
+			}
+			c.room.typingEventQ.remove(payload.Username)
+			c.room.broadcastTypingQueue()
+		case "joined", "left":
 			// Fan out ephemeral status events to everyone in the room.
 			c.room.broadcast <- data
 		default:
