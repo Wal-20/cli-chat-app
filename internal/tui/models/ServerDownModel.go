@@ -38,22 +38,18 @@ func (m ServerDownModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 func (m ServerDownModel) View() string {
 	// Content width capped for better readability
 	cw := m.width - 8
-	if cw > 64 {
-		cw = 64
-	}
+	cw = min(cw, 64)
 	if cw < 32 {
 		cw = m.width - 4
-		if cw < 20 {
-			cw = m.width
-		}
+		cw = min(cw, 20)
 	}
 
 	title := styles.TitleStyle.Render("CLI Chat")
-	friendly := styles.MutedTextStyle.Render("We can’t reach the server right now. Please try again later.")
+	message := styles.MutedTextStyle.Render("We can't reach the server right now. Please try again later.")
 
 	// Center each section within the content width
 	titleLine := lipgloss.Place(cw, 1, lipgloss.Center, lipgloss.Center, title)
-	bodyLine := lipgloss.Place(cw, 1, lipgloss.Center, lipgloss.Center, friendly)
+	bodyLine := lipgloss.Place(cw, 1, lipgloss.Center, lipgloss.Center, message)
 
 	helpItems := []string{styles.RenderKeyBinding("q", "Quit")}
 	help := strings.Join(helpItems, styles.HelpStyle.Render("  "))

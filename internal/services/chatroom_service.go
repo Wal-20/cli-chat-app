@@ -88,4 +88,3 @@ func RemoveOldUserChatrooms() (int64, error) {
 
 	return result.RowsAffected, nil
 }
-

@@ -1,6 +1,6 @@
 # CLI Chat
 
-A terminal chat client with a Go REST/WebSocket backend.  
+A terminal chat client with a Go REST/WebSocket backend.
 
 ## Features
 

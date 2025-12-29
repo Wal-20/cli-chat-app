@@ -52,7 +52,6 @@ build_client() {
   if [ "$PACK" = true ]; then
     upx --best --lzma "$OUTFILE"
   fi
-  chmod +x "$OUTFILE"
 }
 
 build_client linux amd64 true

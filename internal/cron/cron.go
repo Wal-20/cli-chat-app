@@ -10,12 +10,11 @@ import (
 
 func StartCronJobs() {
 	s := gocron.NewScheduler(time.Local)
-
-	s.Every(1).Day().Do(mainCleanup)
+	s.Every(1).Day().Do(dailyCleanup)
 	s.StartAsync()
 }
 
-func mainCleanup() {
+func dailyCleanup() {
 	cleanupNotifications()
 	cleanupUserChatrooms()
 }

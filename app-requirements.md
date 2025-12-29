@@ -16,6 +16,8 @@ kicks
 bans
 role changes
 
+separate api to encrypt and decrypt with several algorithms and complexities, served as a string or a file, the actual function that will encrypt the data will run as a command line utility, it's just the output that is served with the api
+
 ## Monitoring & Logging:
 user is given a log of all prev active chatrooms should they want to join back.
 
@@ -33,7 +35,5 @@ To prevent spamming or flooding in chatrooms, consider adding rate limits on the
 - After deploying, add Github actions for pulling newest code to the vps and compiling binaries and displaying them in releases
 - Implement unique field constraints for models such as chatroom titles, user names
 - When starting the app logged in, the main chat model displays all chatrooms without pagination, not the case when starting not logged in
-
-- manage ws overlapping events, add multiple users to the typing event, add a stack for typing events, more than 3 users display multiple users are typing, instead of sending individual typing events, we send a stack, every user typing event updates that stack and sends it to the wsServer
 
 - implement a stack for wsEvents and sort by priority, typing first, then user left/joined, display events as two rows, first the typing events, then the left/joined events, the stack should be on the wsserver, client only sends wsEvent to update the stack?
