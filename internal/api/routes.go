@@ -65,7 +65,6 @@ func NewServer() {
 			http.HandlerFunc(handlers.BanUser),
 		),
 	))
-
 	mux.Handle("POST /api/users/chatrooms/{id}/promote/{userId}", middleware.AuthMiddleware(
 		middleware.ChatroomMiddleware(
 			http.HandlerFunc(handlers.PromoteUser),

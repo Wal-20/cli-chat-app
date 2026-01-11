@@ -30,7 +30,7 @@ func (s *MessageService) SendMessage(senderID, chatroomID uint, content string) 
 			Username:  user.Name,
 		}
 		if data, err := json.Marshal(payload); err == nil {
-			ws.BroadcastMessage(chatroomID, models.WsEvent{
+			ws.BroadcastMessage(chatroomID, ws.WsEvent{
 				Type: "message",
 				Data: json.RawMessage(data),
 			})

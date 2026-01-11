@@ -16,6 +16,7 @@ import (
 	"github.com/joho/godotenv"
 	"github.com/patrickmn/go-cache"
 
+	"github.com/Wal-20/cli-chat-app/internal/api/ws"
 	"github.com/Wal-20/cli-chat-app/internal/models"
 	"github.com/Wal-20/cli-chat-app/internal/utils"
 	"github.com/gorilla/websocket"
@@ -338,7 +339,7 @@ func (c *APIClient) SendMessage(chatroomID, content string) (map[string]any, err
 //   - a channel of incoming events,
 //   - a cancel function to close the stream,
 //   - and a send function to push events (e.g., typing / presence) to the server.
-func (c *APIClient) SubscribeChatroom(chatroomID uint) (<-chan models.WsEvent, func(), func(models.WsEvent) error, error) {
+func (c *APIClient) SubscribeChatroom(chatroomID uint) (<-chan ws.WsEvent, func(), func(ws.WsEvent) error, error) {
 	if c.baseURL == "" {
 		return nil, nil, nil, fmt.Errorf("client not initialized")
 	}
@@ -385,7 +386,7 @@ func (c *APIClient) SubscribeChatroom(chatroomID uint) (<-chan models.WsEvent, f
 	}
 
 	// read from ws server in goroutine
-	ch := make(chan models.WsEvent, 32)
+	ch := make(chan ws.WsEvent, 32)
 	go func() {
 		defer close(ch)
 		for {
@@ -394,7 +395,7 @@ func (c *APIClient) SubscribeChatroom(chatroomID uint) (<-chan models.WsEvent, f
 				return
 			}
 
-			var evt models.WsEvent
+			var evt ws.WsEvent
 			if err := json.Unmarshal(data, &evt); err == nil {
 				ch <- evt
 			}
@@ -409,7 +410,7 @@ func (c *APIClient) SubscribeChatroom(chatroomID uint) (<-chan models.WsEvent, f
 	}
 
 	// return a function to be used in client to write to ws server
-	send := func(evt models.WsEvent) error {
+	send := func(evt ws.WsEvent) error {
 		data, err := json.Marshal(evt)
 		if err != nil {
 			return err

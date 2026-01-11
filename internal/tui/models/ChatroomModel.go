@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/Wal-20/cli-chat-app/internal/api/ws"
 	"github.com/Wal-20/cli-chat-app/internal/models"
 	"github.com/Wal-20/cli-chat-app/internal/tui/client"
 	"github.com/Wal-20/cli-chat-app/internal/tui/styles"
@@ -44,9 +45,9 @@ type ChatroomModel struct {
 	flashMessage       string
 	wsStatusMessage    string
 	flashStyle         lipgloss.Style
-	wsChan             <-chan models.WsEvent
+	wsChan             <-chan ws.WsEvent
 	wsCancel           func()
-	wsSend             func(models.WsEvent) error
+	wsSend             func(ws.WsEvent) error
 	searching          bool
 	typing             bool
 	typingSeq          int
@@ -453,7 +454,7 @@ func (m ChatroomModel) leaveChatroom(api *client.APIClient, chatroomID uint) (te
 	return NewMainChatModel(m.username, m.userID, m.apiClient), nil
 }
 
-func (m *ChatroomModel) listenWS(ch <-chan models.WsEvent) tea.Cmd {
+func (m *ChatroomModel) listenWS(ch <-chan ws.WsEvent) tea.Cmd {
 	return func() tea.Msg {
 		event, ok := <-ch
 		if !ok {
@@ -494,7 +495,7 @@ type wsUserStatusPayload struct {
 	Username string `json:"username"`
 }
 
-func makeUserStatusCmd(send func(models.WsEvent) error, eventType, username string) tea.Cmd {
+func makeUserStatusCmd(send func(ws.WsEvent) error, eventType, username string) tea.Cmd {
 	if send == nil || strings.TrimSpace(username) == "" {
 		return nil
 	}
@@ -504,7 +505,7 @@ func makeUserStatusCmd(send func(models.WsEvent) error, eventType, username stri
 		if err != nil {
 			return nil
 		}
-		_ = send(models.WsEvent{
+		_ = send(ws.WsEvent{
 			Type: eventType,
 			Data: json.RawMessage(data),
 		})
