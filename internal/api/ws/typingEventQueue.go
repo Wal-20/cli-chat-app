@@ -8,7 +8,7 @@ import (
 
 type typingEventQueue []string
 
-func NewQueue() typingEventQueue {
+func NewTypingQueue() typingEventQueue {
 	return typingEventQueue{}
 }
 

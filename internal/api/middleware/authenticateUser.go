@@ -22,12 +22,12 @@ func AuthMiddleware(next http.Handler) http.Handler {
 			return
 		}
 
-		var claims map[string]interface{}
+		var claims map[string]any
 		var err error
 
 		// Validate (or get from cache) the access token only; no server file IO.
 		if cachedClaims, found := utils.AuthCache.Get(tokenString); found {
-			claims = cachedClaims.(map[string]interface{})
+			claims = cachedClaims.(map[string]any)
 		} else {
 			claims, err = utils.ValidateJWTToken(tokenString)
 			if err != nil {

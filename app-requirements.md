@@ -1,14 +1,15 @@
 cli tool lib (https://cli.urfave.org/)
 
 ## Ideas: 
-- text colors, ascii sticker like messages, file uploads
+- text colors (among other client specified config), ascii sticker like messages, file uploads
 - File Previews (Inline)
 For example:
-Images → show ASCII preview
-PDFs → show metadata
+Images → show ASCII preview, store S3 upload link
+PDFs → show metadata, store S3 upload link
 Text files → show first 10 lines
 
 - Encryption (E2E Mode): You can add optional end-to-end encryption; server only relays ciphertext, keys exchanged via Curve25519, messages encrypted with AES-GCM or ChaCha20
+
 - Admin screen with:
 users joined/left
 mutes

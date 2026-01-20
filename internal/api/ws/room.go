@@ -22,7 +22,7 @@ func newRoom(id uint) *Room {
 		register:     make(chan *Client),
 		unregister:   make(chan *Client),
 		broadcast:    make(chan []byte, 256),
-		typingEventQ: NewQueue(),
+		typingEventQ: NewTypingQueue(),
 	}
 	go r.run()
 	return r
