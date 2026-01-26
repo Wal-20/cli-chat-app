@@ -1,8 +1,9 @@
 services:
   app:
+    image: waleedabdulhadi/chat-server:latest
     build:
       context: .
-      dockerfile: Dockerfile
+      # dockerfile: Dockerfile
       args:
         SERVER_URL: ${SERVER_URL}
     container_name: chatapp-server
