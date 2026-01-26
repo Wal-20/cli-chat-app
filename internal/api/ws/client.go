@@ -2,6 +2,7 @@ package ws
 
 import (
 	"encoding/json"
+
 	"github.com/gorilla/websocket"
 )
 
@@ -42,15 +43,11 @@ func (c *Client) readPump() {
 			if err := json.Unmarshal(evt.Data, &payload); err != nil || payload.Username == "" {
 				continue
 			}
-			c.room.typingEventQ.add(payload.Username)
-			c.room.broadcastTypingQueue()
+			getHub().UpdateTyping(c.room.id, c, payload.Username, true)
 		case "stoppedTyping":
 			var payload wsUserStatusPayload
-			if err := json.Unmarshal(evt.Data, &payload); err != nil || payload.Username == "" {
-				continue
-			}
-			c.room.typingEventQ.remove(payload.Username)
-			c.room.broadcastTypingQueue()
+			_ = json.Unmarshal(evt.Data, &payload)
+			getHub().UpdateTyping(c.room.id, c, payload.Username, false)
 		case "joined", "left":
 			// Fan out ephemeral status events to everyone in the room.
 			c.room.broadcast <- data
