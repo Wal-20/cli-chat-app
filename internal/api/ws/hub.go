@@ -29,7 +29,7 @@ func BroadcastMessage(roomID uint, message WsEvent) {
 		log.Printf("ws marshal error: %v", err)
 		return
 	}
-	GetRoom(roomID).broadcast <- b
+	GetRoom(roomID).broadcastChan <- b
 }
 
 // UpdateTyping enqueues a typing status update to be applied by the room's single
@@ -66,7 +66,7 @@ func ServeChatroomWS(w http.ResponseWriter, r *http.Request) {
 
 	room := GetRoom(uint(id64))
 	client := &Client{room: room, conn: conn, send: make(chan []byte, 256)}
-	room.register <- client
+	room.registerChan <- client
 
 	go client.writePump()
 	client.readPump()

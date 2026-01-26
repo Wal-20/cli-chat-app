@@ -8,29 +8,29 @@ import (
 
 // Room maintains active clients and broadcasts messages to them.
 type Room struct {
-	id           uint
-	clients      map[*Client]bool
-	register     chan *Client
-	unregister   chan *Client
-	broadcast    chan []byte
-	typingEventQ typingEventQueue
-	typingChan   chan typingUpdate  // carries typing start/stop updates into the room loop for serialized processing.
-	typingByConn map[*Client]string // stores the current "typing as username" state per websocket client connection.
-	typingCounts map[string]int     // reference-counts active typing connections per username (handles multi-tab/devices).
+	id             uint
+	clients        map[*Client]bool
+	registerChan   chan *Client
+	unregisterChan chan *Client
+	broadcastChan  chan []byte
+	typingEventQ   typingEventQueue
+	typingChan     chan typingUpdate  // carries typing start/stop updates into the room loop for serialized processing.
+	typingByConn   map[*Client]string // stores the current "typing as username" state per websocket client connection.
+	typingCounts   map[string]int     // reference-counts active typing connections per username (handles multi-tab/devices).
 }
 
 // newRoom constructs a room and starts its event loop goroutine.
 func newRoom(id uint) *Room {
 	r := &Room{
-		id:           id,
-		clients:      make(map[*Client]bool),
-		register:     make(chan *Client),
-		unregister:   make(chan *Client),
-		broadcast:    make(chan []byte, 256),
-		typingEventQ: NewTypingQueue(),
-		typingChan:   make(chan typingUpdate, 256),
-		typingByConn: make(map[*Client]string),
-		typingCounts: make(map[string]int),
+		id:             id,
+		clients:        make(map[*Client]bool),
+		registerChan:   make(chan *Client),
+		unregisterChan: make(chan *Client),
+		broadcastChan:  make(chan []byte, 256),
+		typingEventQ:   NewTypingQueue(),
+		typingChan:     make(chan typingUpdate, 256),
+		typingByConn:   make(map[*Client]string),
+		typingCounts:   make(map[string]int),
 	}
 	go r.run()
 	return r
@@ -40,9 +40,9 @@ func newRoom(id uint) *Room {
 func (r *Room) run() {
 	for {
 		select {
-		case c := <-r.register:
+		case c := <-r.registerChan:
 			r.clients[c] = true
-		case c := <-r.unregister:
+		case c := <-r.unregisterChan:
 			if _, ok := r.clients[c]; ok {
 				changed := r.clearTypingForClient(c)
 				delete(r.clients, c)
@@ -51,7 +51,7 @@ func (r *Room) run() {
 					r.broadcastTypingQueue()
 				}
 			}
-		case msg := <-r.broadcast:
+		case msg := <-r.broadcastChan:
 			r.broadcastToClients(msg)
 		case u := <-r.typingChan:
 			if changed := r.applyTypingUpdate(u); changed {
@@ -115,10 +115,10 @@ func (r *Room) clearTypingForClient(client *Client) bool {
 		return false
 	}
 	delete(r.typingByConn, client)
-	return r.decrementTyping(prevUsername)
+	return r.decrementTyping(prevUsername) // this is called to account for multiple connections for the same username, it decrements typingCounts for the username
 }
 
-// incrementTyping increments the active typing count for a username and adds it to the queue on first entry.
+// incrementTyping increments the active typing count for a username and adds it to the queue on first entry, returns true if first entry for the username
 func (r *Room) incrementTyping(username string) bool {
 	username = strings.TrimSpace(username)
 	if username == "" {

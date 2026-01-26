@@ -19,7 +19,7 @@ type wsUserStatusPayload struct {
 
 func (c *Client) readPump() {
 	defer func() {
-		c.room.unregister <- c
+		c.room.unregisterChan <- c
 		_ = c.conn.Close()
 	}()
 	c.conn.SetReadLimit(1 << 20)
@@ -50,7 +50,7 @@ func (c *Client) readPump() {
 			getHub().UpdateTyping(c.room.id, c, payload.Username, false)
 		case "joined", "left":
 			// Fan out ephemeral status events to everyone in the room.
-			c.room.broadcast <- data
+			c.room.broadcastChan <- data
 		default:
 			// Ignore other incoming event types for now.
 		}
