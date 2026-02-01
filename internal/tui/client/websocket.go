@@ -53,7 +53,6 @@ func (c *APIClient) SubscribeChatroom(chatroomID uint) (<-chan ws.WsEvent, func(
 				conn, resp, err = websocket.DefaultDialer.Dial(u.String(), header)
 			}
 		}
-		// Still failed
 		if err != nil {
 			if resp != nil {
 				return nil, nil, nil, fmt.Errorf("ws dial failed: %s", resp.Status)

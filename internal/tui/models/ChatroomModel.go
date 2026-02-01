@@ -418,7 +418,7 @@ func (m ChatroomModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 type wsMessageMsg struct{ message models.MessageWithUser }
 type wsClosedMsg struct{}
-type wsTypingQueueMsg struct{ users []string }
+type wsTypingQueueMsg struct{ users []string } // currently ws tracked users who are typing
 type wsJoinedMsg struct{ name string }
 type wsLeftMsg struct{ name string }
 

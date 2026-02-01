@@ -26,7 +26,6 @@ func (m mainModel) View() string {
 func main() {
 	apiClient, err := client.NewAPIClient()
 	if err != nil {
-		// If we cannot reach the server, show a friendly message instead of crashing
 		down := models.NewServerDownModel()
 		program := tea.NewProgram(mainModel{currentModel: down}, tea.WithAltScreen())
 		_, _ = program.Run()
@@ -35,7 +34,6 @@ func main() {
 
 	var currentModel tea.Model
 
-	// Try to load token pair and set token
 	if tokenPair, err := utils.LoadTokenPair(); err == nil && tokenPair.AccessToken != "" {
 
 		apiClient.SetTokenPair(tokenPair.AccessToken, tokenPair.RefreshToken)
@@ -53,7 +51,6 @@ func main() {
 		}
 	}
 
-	// Fall back to login if token is invalid or username retrieval fails
 	if currentModel == nil {
 		currentModel = models.NewLoginModel(apiClient)
 	}
