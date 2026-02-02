@@ -1,5 +1,5 @@
 # --- Build stage ---
-FROM golang:1.23-alpine AS build
+FROM golang:1.24-alpine AS build
 
 WORKDIR /app
 
@@ -30,4 +30,3 @@ COPY --from=build /app/releases/server ./server
 EXPOSE 8080
 
 CMD ["./server"]
-

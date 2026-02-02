@@ -1,6 +1,8 @@
 **/.env*
 **/*.exe
+!.env.example
 **/build-errors.log
 **/node_modules/
 .vscode/
 releases/
+.gocache/

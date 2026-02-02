@@ -18,21 +18,34 @@ type Hub struct {
 
 var hub = &Hub{rooms: make(map[uint]*Room)}
 
+// getHub returns the process-wide websocket hub singleton.
 func getHub() *Hub { return hub }
 
-// BroadcastMessage sends the given message to all websocket clients in a room.
+// BroadcastMessage sends a server-originated websocket event to all clients currently
+// connected to the given room ID.
 func BroadcastMessage(roomID uint, message WsEvent) {
 	b, err := json.Marshal(message)
 	if err != nil {
 		log.Printf("ws marshal error: %v", err)
 		return
 	}
-	GetRoom(roomID).broadcast <- b
+	GetRoom(roomID).broadcastChan <- b
 }
 
+// UpdateTyping enqueues a typing status update to be applied by the room's single
+// goroutine (the room loop), which serializes updates and avoids concurrent writes
+// to the typing queue.
+func (h *Hub) UpdateTyping(roomID uint, client *Client, username string, isTyping bool) {
+	GetRoom(roomID).queueTypingUpdate(client, username, isTyping)
+}
+
+// upgrader handles the HTTP->WebSocket upgrade; CheckOrigin is permissive because
+// auth/authorization is handled at a higher layer.
 var upgrader = websocket.Upgrader{CheckOrigin: func(r *http.Request) bool { return true }}
 
-// ServeChatroomWS upgrades a connection and joins the specified chatroom.
+// ServeChatroomWS upgrades the incoming HTTP request to a websocket connection,
+// resolves the chatroom ID from the request path, registers the new client with
+// the room, and starts the read/write pumps.
 func ServeChatroomWS(w http.ResponseWriter, r *http.Request) {
 	idStr := r.PathValue("id")
 	if idStr == "" {
@@ -53,7 +66,7 @@ func ServeChatroomWS(w http.ResponseWriter, r *http.Request) {
 
 	room := GetRoom(uint(id64))
 	client := &Client{room: room, conn: conn, send: make(chan []byte, 256)}
-	room.register <- client
+	room.registerChan <- client
 
 	go client.writePump()
 	client.readPump()

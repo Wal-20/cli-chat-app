@@ -8,6 +8,7 @@ import (
 	"github.com/Wal-20/cli-chat-app/internal/models"
 	"github.com/Wal-20/cli-chat-app/internal/tui/client"
 	"github.com/Wal-20/cli-chat-app/internal/tui/styles"
+	"github.com/Wal-20/cli-chat-app/internal/utils"
 	"github.com/charmbracelet/bubbles/list"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
@@ -272,7 +273,7 @@ func (m MainChatModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.flashStyle = styles.StatusErrorStyle
 				return m, nil
 			}
-			return NewLoginModel(m.apiClient), nil
+			return NewLoginModel(m.apiClient), utils.GetSizeCmd()
 		}
 	}
 

@@ -59,6 +59,5 @@ build_client darwin arm64 false
 build_client darwin amd64 false
 build_client windows amd64 true
 
-
 echo "All builds completed successfully."
 echo "Binaries are in: $RELEASE_DIR"

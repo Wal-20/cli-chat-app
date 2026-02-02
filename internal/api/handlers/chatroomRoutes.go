@@ -27,7 +27,7 @@ func GetChatrooms(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		encoder.Encode(map[string]interface{}{
+		encoder.Encode(map[string]any{
 			"Chatrooms": chatrooms,
 		})
 
@@ -40,14 +40,13 @@ func GetChatrooms(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		encoder.Encode(map[string]interface{}{
+		encoder.Encode(map[string]any{
 			"Chatroom": chatroom,
 		})
 	}
 }
 
 func GetPublicChatrooms(w http.ResponseWriter, r *http.Request) {
-
 	userID, ok := r.Context().Value("userID").(uint)
 	if !ok || userID == 0 {
 		http.Error(w, "Unauthorized: missing or invalid user ID", http.StatusUnauthorized)
@@ -60,8 +59,7 @@ func GetPublicChatrooms(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Failed to retrieve chatrooms", http.StatusInternalServerError)
 		return
 	}
-	encoder.Encode(map[string]interface{}{"Chatrooms": chatrooms})
-
+	encoder.Encode(map[string]any{"Chatrooms": chatrooms})
 }
 
 func GetUsersByChatroom(w http.ResponseWriter, r *http.Request) {
@@ -120,7 +118,7 @@ func GetMessagesByChatroom(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	encoder.Encode(map[string]interface{}{
+	encoder.Encode(map[string]any{
 		"Messages": messages,
 	})
 }
@@ -269,7 +267,6 @@ func JoinChatroom(w http.ResponseWriter, r *http.Request) {
 		}
 		return
 	}
-	// delegate to service to handle join/create membership (idempotent)
 	if _, err := Svcs.Chat.JoinChatroom(userID, username, chatroomID); err != nil {
 		http.Error(w, "Error adding user to chatroom", http.StatusInternalServerError)
 		return
@@ -283,7 +280,6 @@ func JoinChatroom(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		if userChatroom.IsJoined {
-			// already joined; return success idempotently
 			w.Header().Set("Content-Type", "application/json")
 			json.NewEncoder(w).Encode(map[string]any{
 				"Status":   "Already in chatroom",
@@ -333,21 +329,18 @@ func transferOwnership(chatroomId string) error {
 			First(&newOwner).Error
 	}
 
-	// If no users are left, ownership transfer isn't needed
 	if errors.Is(err, gorm.ErrRecordNotFound) {
 		return nil
 	} else if err != nil {
 		return err
 	}
 
-	// Assign new owner
 	newOwner.IsOwner = true
 	newOwner.IsAdmin = true
 	if err := config.DB.Save(&newOwner).Error; err != nil {
 		return err
 	}
 
-	// Update chatroom's owner ID
 	return config.DB.Model(&models.Chatroom{}).
 		Where("id = ?", chatroomId).
 		Update("owner_id", newOwner.UserID).Error
