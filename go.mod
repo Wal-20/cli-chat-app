@@ -1,8 +1,6 @@
 module github.com/Wal-20/cli-chat-app
 
-go 1.23
-
-toolchain go1.23.4
+go 1.24.0
 
 require (
 	github.com/charmbracelet/bubbles v0.20.0
@@ -63,7 +61,8 @@ require (
 	golang.org/x/arch v0.8.0 // indirect
 	golang.org/x/net v0.28.0 // indirect
 	golang.org/x/sync v0.11.0 // indirect
-	golang.org/x/sys v0.30.0 // indirect
+	golang.org/x/sys v0.40.0 // indirect
+	golang.org/x/term v0.39.0 // indirect
 	golang.org/x/text v0.21.0 // indirect
 	google.golang.org/protobuf v1.34.2 // indirect
 	gopkg.in/check.v1 v1.0.0-20201130134442-10cb98267c6c // indirect
