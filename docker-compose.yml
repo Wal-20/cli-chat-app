@@ -33,6 +33,8 @@ services:
       MARIADB_DATABASE: ${db_name}
       MARIADB_USER: ${db_username}
       MARIADB_PASSWORD: ${db_password}
+    ports:
+      - "3306:3306"
     volumes:
       - mariadb_data:/var/lib/mysql
     networks:

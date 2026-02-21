@@ -7,6 +7,7 @@ import (
 	"gorm.io/gorm"
 	"log"
 	"os"
+	"strings"
 )
 
 var DB *gorm.DB // global instance
@@ -22,6 +23,7 @@ func InitDB() error {
 	if dsn == "" {
 		log.Fatal("CANNOT READ SERVICE_URI IN ENVIRONMENT")
 	}
+	dsn = ensureParseTime(dsn)
 
 	db, err := gorm.Open(mysql.Open(dsn), &gorm.Config{})
 	if err != nil {
@@ -43,6 +45,18 @@ func InitDB() error {
 
 	DB = db
 
-	log.Println("DB SYNC")
+	log.Println("DB SYNC: ", dsn)
 	return nil
+}
+
+func ensureParseTime(dsn string) string {
+	// Without parseTime, the MySQL driver returns DATETIME/TIMESTAMP columns as []byte,
+	// which causes scan errors for time.Time fields in models.
+	if strings.Contains(dsn, "parseTime=") {
+		return dsn
+	}
+	if strings.Contains(dsn, "?") {
+		return dsn + "&parseTime=true"
+	}
+	return dsn + "?parseTime=true"
 }
