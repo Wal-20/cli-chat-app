@@ -26,8 +26,7 @@ func (m mainModel) View() string {
 func main() {
 	apiClient, err := client.NewAPIClient()
 	if err != nil {
-		down := models.NewServerDownModel()
-		program := tea.NewProgram(mainModel{currentModel: down}, tea.WithAltScreen())
+		program := tea.NewProgram(mainModel{currentModel: models.NewServerDownModel()}, tea.WithAltScreen())
 		_, _ = program.Run()
 		return
 	}
