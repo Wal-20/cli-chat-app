@@ -2,15 +2,21 @@
 set -euo pipefail
 
 NO_SOURCE=false
+USE_LOCAL=false
 for arg in "$@"; do
     case "$arg" in
         --no-source) NO_SOURCE=true ;;
+        --local) USE_LOCAL=true ;;
     esac
 done
 
 if [ "$NO_SOURCE" = false ]; then
     set -a
-    [ -f .env ] && . .env
+    if [ "$USE_LOCAL" = true ]; then
+        [ -f .env.local ] && . .env.local
+    else
+        [ -f .env ] && . .env
+    fi
     set +a
 fi
 

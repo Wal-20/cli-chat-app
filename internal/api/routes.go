@@ -80,8 +80,16 @@ func NewServer() {
 			http.HandlerFunc(handlers.DeleteChatroom),
 		),
 	))
-	mux.HandleFunc("GET /api/chatrooms/{id}/users", handlers.GetUsersByChatroom)
-	mux.HandleFunc("GET /api/chatrooms/{id}/messages", handlers.GetMessagesByChatroom)
+	mux.Handle("GET /api/chatrooms/{id}/users", middleware.AuthMiddleware(
+		middleware.ChatroomMiddleware(
+			http.HandlerFunc(handlers.GetUsersByChatroom),
+		),
+	))
+	mux.Handle("GET /api/chatrooms/{id}/messages", middleware.AuthMiddleware(
+		middleware.ChatroomMiddleware(
+			http.HandlerFunc(handlers.GetMessagesByChatroom),
+		),
+	))
 	mux.Handle("POST /api/chatrooms/{id}/join", middleware.AuthMiddleware(http.HandlerFunc(handlers.JoinChatroom)))
 	mux.Handle("POST /api/chatrooms/{id}/leave", middleware.AuthMiddleware(
 		middleware.ChatroomMiddleware(
