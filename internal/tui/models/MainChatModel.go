@@ -226,6 +226,9 @@ func (m MainChatModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "n":
 			nm := NewNotificationsModel(m.username, m.userID, m.apiClient)
 			return nm, loadNotifications(m.apiClient)
+		case "S":
+			sm := NewServerConfigModal(m.apiClient, m)
+			return sm, sm.Init()
 		case "ctrl+d":
 			// Delete chatroom: only in "Your chatrooms" pane and only owner
 			if m.activeList != 0 {
@@ -315,6 +318,7 @@ func (m MainChatModel) View() string {
 		styles.RenderKeyBinding("Ctrl+D", "Delete Chatroom"),
 		styles.RenderKeyBinding("L", "Log out"),
 		styles.RenderKeyBinding("n", "Notifications"),
+		styles.RenderKeyBinding("S", "Server info"),
 		styles.RenderKeyBinding("q", "Quit"),
 		styles.RenderKeyBinding("c", "Create a chatroom"),
 	}

@@ -19,9 +19,9 @@ func InitDB() error {
 		log.Println("No .env file found, checking environment variables instead...")
 	}
 
-	dsn := os.Getenv("SERVICE_URI")
+	dsn := os.Getenv("DB_URI")
 	if dsn == "" {
-		log.Fatal("CANNOT READ SERVICE_URI IN ENVIRONMENT")
+		log.Fatal("CANNOT READ DB_URI IN ENVIRONMENT")
 	}
 	dsn = ensureParseTime(dsn)
 

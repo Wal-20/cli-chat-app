@@ -40,6 +40,9 @@ func NewServer() {
 		http.ServeFile(w, r, "./releases/chat-cli-darwin-arm64")
 	})
 
+	// Server info (redacted config) — any authenticated user
+	mux.Handle("GET /api/server/config", middleware.AuthMiddleware(http.HandlerFunc(handlers.GetServerConfig)))
+
 	// User routes
 	mux.HandleFunc("GET /api/users", handlers.GetUsers)
 	mux.HandleFunc("POST /api/users", handlers.CreateUser)

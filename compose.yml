@@ -1,14 +1,18 @@
 services:
   app:
-    image: waleedabdulhadi/chat-server:latest
+    # image: waleedabdulhadi/chat-server:latest
     build:
-      context: . # dockerfile: Dockerfile args:
+      context: .
+      dockerfile: Dockerfile
       args:
         SERVER_URL: ${SERVER_URL}
+        JWT_SECRET: ${JWT_SECRET}
     container_name: chatapp-server
     environment:
       SERVER_URL: ${SERVER_URL}
-      SERVICE_URI: ${SERVICE_URI}
+      # Build DB_URI from parts so the host is always the `db` service on the
+      # compose network, regardless of the host value in the env file.
+      DB_URI: "${db_username}:${db_password}@tcp(db:${db_port})/${db_name}?parseTime=True"
       JWT_SECRET: ${JWT_SECRET}
       db_name: ${db_name}
       db_host: db
@@ -16,7 +20,8 @@ services:
       db_username: ${db_username}
       db_password: ${db_password}
     depends_on:
-      - db
+      db:
+        condition: service_healthy
     ports:
       - "127.0.0.1:8080:8080"
     restart: unless-stopped
@@ -32,6 +37,12 @@ services:
       MARIADB_DATABASE: ${db_name}
       MARIADB_USER: ${db_username}
       MARIADB_PASSWORD: ${db_password}
+    healthcheck:
+      test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
     ports:
       - "3306:3306"
     volumes:

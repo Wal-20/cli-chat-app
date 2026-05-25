@@ -5,7 +5,6 @@ WORKDIR /app
 
 RUN apk add --no-cache bash upx tzdata
 
-# Copy dependency files first (for Docker layer caching)
 COPY go.mod go.sum ./
 
 RUN go mod download
@@ -13,10 +12,13 @@ RUN go mod download
 COPY . .
 
 ARG SERVER_URL
+ARG JWT_SECRET
 ENV SERVER_URL=${SERVER_URL}
+ENV JWT_SECRET=${JWT_SECRET}
 
-# Build server and client binaries, no-source depends on server secrets, or args passed into build, instead of .env file in container
-RUN chmod +x ./build.sh && ./build.sh
+# Build server and client binaries. --no-source: use the build args above
+# instead of sourcing a baked-in .env, so the URL/secret come from compose.
+RUN chmod +x ./build.sh && ./build.sh --no-source
 
 # --- Runtime stage ---
 FROM alpine:latest
